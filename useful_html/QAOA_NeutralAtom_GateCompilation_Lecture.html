@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QAOA 原理与门编译 —— 基于中性原子量子计算机</title>
+<script>
+MathJax = {
+  tex: {
+    inlineMath: [['$', '$'], ['\\(', '\\)']],
+    displayMath: [['$$', '$$'], ['\\[', '\\]']],
+    macros: {
+      bra: ['\\langle #1 |', 1],
+      ket: ['| #1 \\rangle', 1],
+      braket: ['\\langle #1 | #2 \\rangle', 2],
+      CZ: '\\mathrm{CZ}',
+      CCZ: '\\mathrm{CCZ}',
+      CNOT: '\\mathrm{CNOT}',
+      Id: '\\mathbb{1}',
+      RY: 'R_y',
+      RX: 'R_x',
+      RZ: 'R_z',
+      ZZ: '\\mathrm{ZZ}',
+      QAOA: '\\mathrm{QAOA}',
+      MaxCut: '\\mathrm{MaxCut}',
+      MIS: '\\mathrm{MIS}',
+      GW: '\\mathrm{GW}',
+      HPS: 'H_{\\mathrm{PS}}',
+      HM: 'H_{\\mathrm{M}}',
+      HC: 'H_C',
+      HB: 'H_B',
+      UCs: 'U_C',
+      UBs: 'U_B',
+      argmax: '\\operatorname{arg\\,max}',
+      argmin: '\\operatorname{arg\\,min}',
+      expval: ['\\langle #1 \\rangle', 1],
+      poly: '\\mathrm{poly}',
+      Tr: '\\operatorname{Tr}',
+      diag: '\\operatorname{diag}',
+    }
+  },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+<style>
+  :root {
+    --bg: #fdfbf7;
+    --card-bg: #ffffff;
+    --text: #2c2416;
+    --text-secondary: #5c5347;
+    --border: #d9d0c1;
+    --accent: #8b4513;
+    --accent-light: #fdf2e9;
+    --accent2: #1a5276;
+    --accent2-light: #eaf2f8;
+    --accent3: #0e6655;
+    --accent3-light: #e8f8f5;
+    --success: #1e7e34;
+    --success-light: #eafaf1;
+    --highlight: #6c3483;
+    --highlight-light: #f4ecf7;
+    --red: #922b21;
+    --red-light: #fdedec;
+    --orange: #b9770e;
+    --orange-light: #fef5e7;
+    --radius: 6px;
+    --shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Palatino Linotype", "Book Antiqua", Palatino, Georgia, "Times New Roman", serif;
+    background: var(--bg); color: var(--text); line-height: 1.75;
+    max-width: 1000px; margin: 0 auto; padding: 32px 28px 100px;
+    font-size: 17px;
+  }
+  .cover {
+    text-align: center; padding: 64px 32px; margin-bottom: 40px;
+    background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+    border-top: 5px solid var(--accent);
+  }
+  .cover h1 { font-size: 2rem; color: #111; margin-bottom: 10px; letter-spacing: 0.02em; }
+  .cover .subtitle { font-size: 1.1rem; color: var(--text-secondary); margin-bottom: 20px; }
+  .cover .meta { font-size: 0.88rem; color: var(--text-secondary); }
+  .cover .meta span { display: inline-block; margin: 0 10px; }
+  section {
+    background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 32px 36px; margin-bottom: 24px;
+    box-shadow: var(--shadow);
+  }
+  h2 {
+    font-size: 1.45rem; margin-bottom: 18px; padding-bottom: 10px;
+    border-bottom: 2px solid var(--accent-light); color: #111;
+    display: flex; align-items: center; gap: 10px;
+  }
+  h2 .sec-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 38px; height: 38px; background: var(--accent); color: #fff;
+    border-radius: 50%; font-size: 1rem; font-weight: 700; flex-shrink: 0;
+  }
+  h3 { font-size: 1.15rem; margin-top: 26px; margin-bottom: 10px; color: var(--accent2); }
+  h4 { font-size: 1.02rem; margin-top: 18px; margin-bottom: 6px; color: #333; }
+  p { margin-bottom: 12px; text-align: justify; }
+  ul, ol { margin: 8px 0 16px 28px; }
+  li { margin-bottom: 6px; }
+
+  .callout {
+    border-left: 4px solid var(--accent); background: var(--accent-light);
+    padding: 14px 20px; border-radius: 0 var(--radius) var(--radius) 0;
+    margin: 18px 0; font-size: 0.95rem;
+  }
+  .callout-accent2 { border-left-color: var(--accent2); background: var(--accent2-light); }
+  .callout-accent3 { border-left-color: var(--accent3); background: var(--accent3-light); }
+  .callout-success { border-left-color: var(--success); background: var(--success-light); }
+  .callout-highlight { border-left-color: var(--highlight); background: var(--highlight-light); }
+  .callout-red { border-left-color: var(--red); background: var(--red-light); }
+  .callout-orange { border-left-color: var(--orange); background: var(--orange-light); }
+
+  .formula-box {
+    display: block; margin: 16px 0; padding: 14px 18px;
+    border-radius: var(--radius); text-align: center;
+  }
+  .formula-box-blue { background: var(--accent2-light); border: 1px solid #bdd6e6; }
+  .formula-box-teal { background: #e8f8f5; border: 1px solid #a3e4d7; }
+  .formula-box-warm { background: #fef9e7; border: 1px solid #f9e79f; }
+
+  .step-box {
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px 20px; margin: 14px 0; background: #fafaf8;
+    border-left: 5px solid var(--accent);
+  }
+  .step-box .step-label {
+    display: inline-block; background: var(--accent); color: #fff;
+    font-weight: 700; font-size: 0.85rem; padding: 2px 12px; border-radius: 11px;
+    margin-bottom: 8px;
+  }
+  .step-box.step-blue { border-left-color: var(--accent2); }
+  .step-box.step-blue .step-label { background: var(--accent2); }
+  .step-box.step-green { border-left-color: var(--success); }
+  .step-box.step-green .step-label { background: var(--success); }
+  .step-box.step-purple { border-left-color: var(--highlight); }
+  .step-box.step-purple .step-label { background: var(--highlight); }
+
+  .circuit-diagram {
+    display: flex; align-items: center; justify-content: center; gap: 4px;
+    flex-wrap: wrap; margin: 18px 0; font-family: "Courier New", monospace;
+    font-size: 0.9rem; padding: 16px; background: #fafaf8;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    overflow-x: auto;
+  }
+  .circuit-box {
+    border: 2px solid var(--accent2); border-radius: var(--radius);
+    padding: 6px 12px; background: var(--accent2-light);
+    font-weight: 600; text-align: center; white-space: nowrap;
+  }
+  .circuit-box.accent { border-color: var(--accent); background: var(--accent-light); }
+  .circuit-box.green { border-color: var(--success); background: var(--success-light); }
+  .circuit-arrow { font-size: 1.3rem; color: var(--accent2); font-weight: 700; }
+
+  .table-wrap { overflow-x: auto; margin: 14px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  th { background: #f6f4ee; font-weight: 700; text-align: left; padding: 10px 14px; border: 1px solid var(--border); }
+  td { padding: 10px 14px; border: 1px solid var(--border); }
+  tr:nth-child(even) td { background: #fdfcf9; }
+
+  .side-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+  .side-card {
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px 18px; background: #fafaf8;
+  }
+  .side-card h4 { margin-top: 0; }
+  .side-card.left-accent { border-left: 4px solid var(--accent); }
+  .side-card.right-accent { border-left: 4px solid var(--accent2); }
+
+  .toc { list-style: none; margin: 0; padding: 0; }
+  .toc li { margin: 6px 0; padding: 4px 0; border-bottom: 1px dotted var(--border); }
+  .toc a { color: var(--accent2); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; color: var(--accent); }
+
+  .footer {
+    text-align: center; font-size: 0.85rem; color: var(--text-secondary);
+    margin-top: 36px; padding: 16px; border-top: 1px solid var(--border);
+  }
+
+  /* gate diagram */
+  .gate-grid {
+    display: grid; grid-template-columns: 80px 1fr; gap: 0;
+    margin: 12px 0; font-size: 0.92rem; align-items: center;
+  }
+  .gate-name {
+    font-weight: 700; color: var(--accent2); padding: 6px 12px;
+    background: var(--accent2-light); border: 1px solid #bdd6e6;
+    text-align: center; font-family: "Courier New", monospace;
+  }
+  .gate-desc {
+    padding: 6px 14px; border: 1px solid var(--border);
+    background: #fafaf8;
+  }
+
+  @media (max-width: 700px) {
+    body { padding: 12px 10px 60px; font-size: 15px; }
+    .cover, section { padding: 18px 14px; }
+    .side-grid { grid-template-columns: 1fr; }
+    .cover h1 { font-size: 1.4rem; }
+    .gate-grid { grid-template-columns: 70px 1fr; font-size: 0.82rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<article class="cover">
+  <h1>QAOA 原理与门编译</h1>
+  <p class="subtitle">—— 基于中性原子量子计算机的完整技术路线</p>
+  <p class="meta">
+    <span>📖 参考文献：Farhi, Goldstone &amp; Gutmann (2014); Ebadi et al., Science 376, 1209 (2022)</span>
+    <span>📐 Nguyen, Liu, Wurtz, Lukin, Wang &amp; Pichler, arXiv:2209.03965 (2023)</span>
+    <span>⚛ Wang, Rubin, Dominy &amp; Rieffel, Phys. Rev. A 101, 012320 (2020)</span>
+  </p>
+</article>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section>
+  <h2><span class="sec-num">§</span>目录</h2>
+  <ol class="toc" style="list-style:decimal; margin-left:24px;">
+    <li><a href="#s1">从绝热定理到 QAOA：理论根源</a></li>
+    <li><a href="#s2">QAOA 电路标准形式：$p$ 层交替演化</a></li>
+    <li><a href="#s3">问题编码：从组合优化到 Ising 哈密顿量</a></li>
+    <li><a href="#s4">中性原子物理平台：里德堡哈密顿量与原生操作</a></li>
+    <li><a href="#s5">门编译 I：单量子比特门——激光驱动拉比振荡</a></li>
+    <li><a href="#s6">门编译 II：两量子比特纠缠门——里德堡阻塞与 CZ 门</a></li>
+    <li><a href="#s7">门编译 III：QAOA 核心操作 $e^{-i\gamma Z_i Z_j}$ 的分解</a></li>
+    <li><a href="#s8">完整 QAOA 电路编译：从高层算法到物理脉冲序列</a></li>
+    <li><a href="#s9">进阶：XY 混合算符与约束优化</a></li>
+    <li><a href="#s10">总结：中性原子 QAOA 的完整技术栈</a></li>
+  </ol>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section id="s1">
+  <h2><span class="sec-num">1</span>从绝热定理到 QAOA：理论根源</h2>
+
+  <h3>1.1 量子绝热定理</h3>
+  <p>
+    考虑一个含时哈密顿量 $H(t)$，其瞬时基态为 $|E_0(t)\rangle$，第一激发态为 $|E_1(t)\rangle$，
+    二者之间的瞬时能隙为 $\Delta(t) = E_1(t) - E_0(t)$。<b>量子绝热定理</b>告诉我们：
+  </p>
+
+  <div class="formula-box formula-box-blue">
+    <strong>绝热定理</strong><br>
+    若系统在 $t=0$ 时制备于 $H(0)$ 的基态 $|E_0(0)\rangle$，且哈密顿量变化足够慢——
+    演化时间 $T$ 满足 $T \gg \max_t \frac{|\langle E_1|\partial_t H|E_0\rangle|}{\Delta(t)^2}$——
+    则系统在 $t=T$ 时将处于 $H(T)$ 的基态 $|E_0(T)\rangle$（误差可控）。
+  </div>
+
+  <p>
+    绝热量子计算 (Adiabatic Quantum Computation, AQC) 基于这一原理构造：
+  </p>
+
+  <div class="formula-box formula-box-teal">
+    <strong>绝热演化</strong><br>
+    $$H(t) = \big(1 - s(t)\big) \cdot H_B + s(t) \cdot H_C, \quad s(0) = 0,\; s(T) = 1$$
+    其中 $H_B$ 是<b>初始哈密顿量</b>（基态易制备，如 $H_B = -\sum_i X_i$，基态为 $|+\rangle^{\otimes n}$），
+    $H_C$ 是<b>问题哈密顿量</b>（基态编码了组合优化问题的最优解）。
+  </div>
+
+  <h3>1.2 Trotterization：从连续演化到量子电路</h3>
+  <p>
+    绝热演化 $U(T) = \mathcal{T}\exp(-i \int_0^T H(t) dt)$ 是连续的，不能直接在门模型量子计算机上执行。
+    需要对时间进行离散化，将总演化时间 $T$ 切分为 $p$ 小段，每段时长 $\Delta t = T/p$：
+  </p>
+
+  <div class="formula-box formula-box-warm">
+    <strong>Trotter-Suzuki 分解（一阶）</strong><br>
+    $$e^{-i\Delta t H(t_j)} \approx e^{-i\beta_j H_B} \cdot e^{-i\gamma_j H_C}$$
+    其中 $\beta_j = (1 - s(t_j))\Delta t$，$\gamma_j = s(t_j)\Delta t$。
+  </div>
+
+  <p>
+    QAOA 的核心洞察是：<b>放弃严格绝热条件</b>。将 $\beta_j$ 和 $\gamma_j$ 视为<b>自由变分参数</b>，
+    不再由绝热调度 $s(t)$ 决定，而是由经典优化器选择。这使得 QAOA 电路可以极浅（$p \sim 1-10$ 层），
+    适应 NISQ 硬件的现实约束。
+  </p>
+
+  <div class="callout callout-accent2">
+    <strong>关键理解：</strong>QAOA 不是绝热量子计算的近似实现——它是绝热思想的<b>变分推广</b>。
+    绝热定理要求 $p \to \infty$ 才能保证收敛到基态；QAOA 接受有限 $p$ 的近似解，
+    用经典优化弥补浅电路的不足。这正是 NISQ 时代的正确策略。
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section id="s2">
+  <h2><span class="sec-num">2</span>QAOA 电路标准形式：$p$ 层交替演化</h2>
+
+  <h3>2.1 标准 QAOA 电路</h3>
+
+  <div class="step-box step-blue">
+    <span class="step-label">QAOA 电路（$p$ 层）</span>
+    <p><b>Step 0.</b> 制备初始态 $|s\rangle = |+\rangle^{\otimes n} = \frac{1}{\sqrt{2^n}}\sum_{z \in \{0,1\}^n} |z\rangle$。</p>
+    <p><b>Step 1–$p$.</b> 交替施加：
+      $$U_C(\gamma_\ell) = e^{-i\gamma_\ell H_C} \quad\text{(相位分离层)}$$
+      $$U_B(\beta_\ell) = e^{-i\beta_\ell H_B} \quad\text{(混合层)}$$
+    </p>
+    <p><b>Step $p+1$.</b> 在计算基上测量，获得解候选 $z$。</p>
+  </div>
+
+  <div class="formula-box formula-box-blue">
+    <strong>QAOA 参数化量子态</strong><br>
+    $$|\psi(\boldsymbol{\gamma}, \boldsymbol{\beta})\rangle = U_B(\beta_p) U_C(\gamma_p) \cdots U_B(\beta_1) U_C(\gamma_1) |s\rangle$$
+    <strong>目标函数：</strong>
+    $$C(\boldsymbol{\gamma}, \boldsymbol{\beta}) = \langle\psi|H_C|\psi\rangle \to \min$$
+  </div>
+
+  <h3>2.2 哈密顿量的显式形式</h3>
+
+  <div class="side-grid">
+    <div class="side-card left-accent">
+      <h4>问题哈密顿量 $H_C$（Phase Separator）</h4>
+      <p>对 MaxCut：</p>
+      $$H_C = \sum_{(i,j) \in E} W_{ij} Z_i Z_j$$
+      <p>对角矩阵，计算基态为其本征态。每一个基态 $|z\rangle$ 的本征值恰为 MaxCut 的切割值（差一个常数）。</p>
+    </div>
+    <div class="side-card right-accent">
+      <h4>混合哈密顿量 $H_B$（Mixer）</h4>
+      <p>标准选择：</p>
+      $$H_B = \sum_{i=1}^{n} X_i$$
+      <p>在计算基之间产生跃迁。$e^{-i\beta X}$ 实现单量子比特 $|0\rangle \leftrightarrow |1\rangle$ 翻转。</p>
+    </div>
+  </div>
+
+  <h3>2.3 为什么 $H_B = \sum X_i$ 是最简选择？</h3>
+  <p>
+    标准混合器的物理意义：$\exp(-i\beta \sum_i X_i) = \bigotimes_i R_X(2\beta)_i$ 是所有量子比特的<b>同步旋转</b>。
+    在 $|+\rangle$ 基下它是平凡的（$X|+\rangle = |+\rangle$），在 $|0\rangle/|1\rangle$ 基下它产生相干叠加。
+    这使得 $H_B$ 的基态 $|+\rangle^{\otimes n}$ 是<b>所有可能解的最均匀叠加</b>——初始搜索从"完全无知"开始。
+  </p>
+
+  <div class="callout callout-accent2">
+    <strong>更一般的框架（Hadfield et al. 2019）：</strong>QAOA 可以推广为 Quantum Alternating Operator Ansatz。
+    混合算符不必是 $\sum X_i$——对于带约束问题，可以将混合算符设计为<b>仅在可行子空间内产生跃迁</b>，
+    保证每一步演化后量子态始终留在可行域内。这引出了 §9 讨论的 XY 混合算符。
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section id="s3">
+  <h2><span class="sec-num">3</span>问题编码：从组合优化到 Ising 哈密顿量</h2>
+
+  <h3>3.1 Ising 模型与 QUBO</h3>
+  <p>
+    几乎所有 NP 组合优化问题都可以被表述为二次无约束二元优化问题 (QUBO) 或其等价形式——Ising 模型。
+    这是 QAOA 能够应用于广泛问题的基础（参见 Lucas, Front. Phys. 2, 5, 2014）。
+  </p>
+
+  <div class="formula-box formula-box-blue">
+    <strong>Ising 哈密顿量（一般形式）</strong><br>
+    $$H_{\text{Ising}} = \sum_{i} h_i Z_i + \sum_{i < j} J_{ij} Z_i Z_j + \sum_{i < j < k} K_{ijk} Z_i Z_j Z_k + \cdots$$
+    对于 MaxCut（无磁场项 $h_i$）：$H_C = \sum_{(i,j)\in E} W_{ij} Z_i Z_j$
+  </div>
+
+  <h3>3.2 MaxCut 的完整编码流程</h3>
+  <table>
+    <tr><th>步骤</th><th>内容</th><th>公式</th></tr>
+    <tr><td>1</td><td>定义二元变量</td><td>$z_i = +1$（属于 $S$），$z_i = -1$（属于 $T$）</td></tr>
+    <tr><td>2</td><td>目标函数</td><td>$C(z) = \frac{1}{2}\sum_{(i,j)\in E} W_{ij}(1 - z_i z_j)$</td></tr>
+    <tr><td>3</td><td>映射到哈密顿量</td><td>$z_i \mapsto Z_i$（Pauli-Z 的本征值 $\pm 1$ 恰好对应 $z_i$）</td></tr>
+    <tr><td>4</td><td>问题哈密顿量</td><td>$H_C = \frac{1}{2}\sum W_{ij} - \frac{1}{2}\sum W_{ij} Z_i Z_j \propto \sum W_{ij} Z_i Z_j$</td></tr>
+    <tr><td>5</td><td>基态</td><td>$|z^*\rangle = \argmin_z \langle z|H_C|z\rangle$ 是最优切割</td></tr>
+  </table>
+
+  <div class="callout callout-accent2">
+    <strong>推广到任意组合优化问题：</strong>Lucas (2014) 给出了 Karp 的 21 个 NP-complete 问题的 Ising 编码。
+    对于电力现货出清 (Unit Commitment, UC) 等实际问题，每台机组的启停状态 $u_{i,t}$ 对应一个自旋变量，
+    机组爬坡、最小启停时间等约束被编码为二次或三次惩罚项，构成带约束的 QUBO。
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section id="s4">
+  <h2><span class="sec-num">4</span>中性原子物理平台：里德堡哈密顿量与原生操作</h2>
+
+  <h3>4.1 物理系统概述</h3>
+  <p>
+    中性原子量子计算机（如 QuEra 的 Aquila、Pasqal 的 Fresnel）利用光镊阵列在真空中囚禁单个原子。
+    每个原子编码一个量子比特：<b>基态 $|g\rangle = |0\rangle$</b> 和一个 <b>里德堡态 $|r\rangle = |1\rangle$</b>
+    （高激发态，主量子数 $n \sim 70$）。
+  </p>
+
+  <p>原子间距通常在 $2-10\ \mu\text{m}$，原子数规模可达数百。核心物理机制是<b>里德堡阻塞效应</b>——两个相距足够近的原子不能同时处于里德堡态 $|r\rangle$。</p>
+
+  <h3>4.2 里德堡哈密顿量</h3>
+  <p>在旋转波近似 (Rotating Wave Approximation, RWA) 下，驱动激光与原子相互作用的哈密顿量为：</p>
+
+  <div class="formula-box formula-box-blue">
+    <strong>里德堡原子阵列哈密顿量</strong><br>
+    $$\begin{aligned}
+    H(t) &= \frac{\Omega(t)}{2} \sum_i \sigma^x_i - \Delta(t) \sum_i n_i + \sum_{i < j} \frac{C_6}{r_{ij}^6} n_i n_j
+    \end{aligned}$$
+    其中：
+    <ul style="text-align:left; margin-top:10px;">
+      <li>$\Omega(t)$：拉比频率（Rabi frequency），驱动 $|0\rangle \leftrightarrow |1\rangle$ 跃迁的强度</li>
+      <li>$\Delta(t)$：激光失谐（detuning），激光频率与原子共振频率的差值</li>
+      <li>$n_i = |1\rangle\langle 1|_i$：里德堡态占据数算符（projector）</li>
+      <li>$C_6 / r_{ij}^6$：范德瓦尔斯 (van der Waals) 相互作用能，$C_6 \sim 5.42 \times 10^6\ \text{rad}/\mu\text{s} \cdot \mu\text{m}^6$（铷原子 $|70S_{1/2}\rangle$）</li>
+      <li>$\sigma^x_i = |0\rangle\langle 1|_i + |1\rangle\langle 0|_i$（注意：在里德堡原子文献中，Pauli 矩阵定义在 $\{|g\rangle, |r\rangle\}$ 基上，本文统一使用标准 $\{|0\rangle, |1\rangle\}$ 约定）</li>
+    </ul>
+  </div>
+
+  <h3>4.3 里德堡阻塞的物理图像</h3>
+  <p>
+    当原子 $i$ 被激发到里德堡态 $|r\rangle$ 时，它产生一个强偶极场，通过范德瓦尔斯相互作用使邻近原子 $j$ 的里德堡能级发生偏移。
+    若 $V_{ij} = C_6/r_{ij}^6$ 大于激光线宽（$\sim \Omega$），则原子 $j$ <b>不可能</b>同时被激发——这就是<b>里德堡阻塞</b>。
+  </p>
+
+  <div class="formula-box formula-box-teal">
+    <strong>阻塞半径</strong><br>
+    $$R_b = \left(\frac{C_6}{\Omega}\right)^{1/6} \approx 5-10\ \mu\text{m}\ \text{(典型值)}$$
+    在 $R_b$ 以内的任意两个原子不能同时处于 $|1\rangle$——天然实现独立集约束。
+  </div>
+
+  <div class="callout callout-accent2">
+    <strong>阻塞半径内：</strong>原子间 ZZ 相互作用 $V n_i n_j$ 使得 $|11\rangle$ 态能量偏移，
+    有效产生 $\mathrm{CZ}$ 门的条件相位。这是中性原子实现两量子比特纠缠门的<b>物理基础</b>。
+  </div>
+
+  <h3>4.4 两种运算模式</h3>
+  <table>
+    <tr><th>模式</th><th>机制</th><th>擅长的问题</th><th>核心操作</th></tr>
+    <tr>
+      <td><b>Analog（模拟）模式</b></td>
+      <td>全局激光脉冲，所有原子同时演化</td>
+      <td>MIS on UDG（单位圆盘图）</td>
+      <td>绝热 ramp：$\Omega(t)$ 从小到大，$\Delta(t)$ 从负到正</td>
+    </tr>
+    <tr>
+      <td><b>Digital（门）模式</b></td>
+      <td>局域激光寻址，逐个/逐对施加量子门</td>
+      <td>QAOA、VQE、通用量子电路</td>
+      <td>单比特 $R_X, R_Z$ + 两比特 $\mathrm{CZ}$ 门</td>
+    </tr>
+  </table>
+
+  <div class="callout callout-orange">
+    <strong>本文聚焦门模式：</strong>QAOA 需要精确的量子门操作来编译 $e^{-i\gamma Z_i Z_j}$ 和 $e^{-i\beta X_i}$。
+    以下 §5–§7 将详细介绍这些门在中性原子平台上的物理实现。
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section id="s5">
+  <h2><span class="sec-num">5</span>门编译 I：单量子比特门——激光驱动拉比振荡</h2>
+
+  <h3>5.1 物理实现原理</h3>
+  <p>
+    单量子比特门通过<b>共振激光脉冲</b>驱动 $|0\rangle \leftrightarrow |1\rangle$ 跃迁实现。
+    在相互作用表象中，共振驱动（$\Delta = 0$）的哈密顿量简化为：
+  </p>
+
+  <div class="formula-box formula-box-blue">
+    <strong>单比特驱动哈密顿量</strong><br>
+    $$H_{\text{single}} = \frac{\Omega}{2}\big(\cos\phi \cdot \sigma^x + \sin\phi \cdot \sigma^y\big)$$
+    其中 $\phi$ 是激光相位，控制旋转轴在 $xy$ 平面内的方向。
+  </div>
+
+  <p>演化算符为 $U(\theta, \phi) = \exp(-i\frac{\theta}{2}(\cos\phi \cdot \sigma^x + \sin\phi \cdot \sigma^y))$，其中 $\theta = \Omega \cdot \tau$ 是脉冲面积（$\tau$ 为脉冲时长）。</p>
+
+  <h3>5.2 标准单比特门分解</h3>
+  <p>任意单量子比特旋转 $U \in SU(2)$ 可分解为三个 $R_Z$ 和两个 $R_X$ 的组合（Euler 分解）：</p>
+
+  <div class="formula-box formula-box-teal">
+    $$R(\alpha, \beta, \gamma) = R_Z(\alpha) \cdot R_X(\beta) \cdot R_Z(\gamma)$$
+  </div>
+
+  <p>在中性原子上：</p>
+  <div class="gate-grid">
+    <div class="gate-name">$R_X(\theta)$</div>
+    <div class="gate-desc">共振脉冲，相位 $\phi = 0$：$H = \frac{\Omega}{2}\sigma^x$，脉冲时长 $\tau = \theta/\Omega$。</div>
+    <div class="gate-name">$R_Y(\theta)$</div>
+    <div class="gate-desc">共振脉冲，相位 $\phi = \pi/2$：$H = \frac{\Omega}{2}\sigma^y$。</div>
+    <div class="gate-name">$R_Z(\theta)$</div>
+    <div class="gate-desc"><b>虚拟门</b>：通过调整后续脉冲的相位 $\phi$ 实现，无需物理脉冲。<br>等效于在旋转坐标系中做相位偏移——在 $|0\rangle$ 和 $|1\rangle$ 之间引入相对相位 $\theta$。</div>
+  </div>
+
+  <div class="callout callout-success">
+    <strong>虚拟 Z 旋转 (Virtual-Z Gate)：</strong>虚拟 Z 旋转（Virtual-Z Gate）是一种重要的量子控制编译技术。它无需施加额外物理脉冲，而是通过更新后续驱动脉冲的相位参数实现等效 Z 旋转，因此具有零额外门时间，并避免了额外脉冲带来的控制误差。在中性原子平台中，灵活的激光相位控制使该技术能够有效降低 QAOA 等变分量子算法的编译开销。
+  </div>
+
+  <h3>5.3 混合层 $e^{-i\beta X_i}$ 的编译</h3>
+  <p>
+    混合层 $U_B(\beta) = \exp(-i\beta \sum_i X_i) = \prod_i R_X(2\beta)_i$。
+    在中性原子平台上：</p>
+  <ul>
+    <li><b>全局模式（首选）：</b>一束宽激光同时覆盖所有原子，施加 $\Omega \tau = 2\beta$ 的 $R_X$ 旋转。单次脉冲完成，深度为 1。</li>
+    <li><b>局域模式：</b>对每个原子依次寻址——适用于不同原子需要不同旋转角的情况（如自适应 QAOA）。</li>
+  </ul>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section id="s6">
+  <h2><span class="sec-num">6</span>门编译 II：两量子比特纠缠门——里德堡阻塞与 CZ 门</h2>
+
+  <h3>6.1 CZ 门的物理实现</h3>
+  <p>
+    控制-Z 门 ($\mathrm{CZ}$) 是中性原子平台的原生两比特纠缠门。其作用为：
+    $$\mathrm{CZ} = \diag(1, 1, 1, -1)$$
+    即仅在 $|11\rangle$ 态上施加 $\pi$ 相位。
+  </p>
+
+  <p><b>实现机制（Jaksch et al., PRL 85, 2208, 2000）：</b></p>
+
+  <div class="step-box step-blue">
+    <span class="step-label">CZ 门脉冲序列</span>
+    <p><b>Step 1.</b> 对控制原子（atom 1）施加 $\pi$ 脉冲：$|0\rangle_1 \to -i|1\rangle_1$。</p>
+    <p><b>Step 2.</b> 对目标原子（atom 2）施加 $2\pi$ 脉冲，但<b>通过里德堡阻塞条件限制</b>——仅当 atom 1 不在 $|1\rangle$ 态时，atom 2 才能被激发。</p>
+    <p><b>● 若 atom 1 = $|0\rangle$：</b>无阻塞 → atom 2 自由演化 $2\pi$ → 获得相位因子 $-1$。</p>
+    <p><b>● 若 atom 1 = $|1\rangle$：</b>里德堡阻塞阻止 atom 2 激发 → atom 2 不演化。</p>
+    <p><b>Step 3.</b> 对 atom 1 施加 $\pi$ 脉冲将其还原到 $|0\rangle$。</p>
+  </div>
+
+  <p>净效果：$|00\rangle \to -|00\rangle$，其余三个基态不变。加上全局相位校正（对所有态加 $-1$），得到 $\mathrm{CZ} = \diag(1,1,1,-1)$。</p>
+
+  <h3>6.2 里德堡阻塞 CZ 门的数学描述</h3>
+  <p>更一般地，将 $\mathrm{CZ}$ 门表示为里德堡阻塞下的受控相位累积：</p>
+
+  <div class="formula-box formula-box-blue">
+    <strong>CZ 门的有效哈密顿量</strong><br>
+    $$H_{\mathrm{CZ}} = \frac{\Omega}{2}\big(\sigma^x_1 + \sigma^x_2\big) + V_0 \cdot n_1 n_2$$
+    $$V_0 = \frac{C_6}{r^6} \quad\text{(近邻阻塞能)}$$
+    在条件 $V_0 \gg \Omega$ 下，$|11\rangle$ 态被冻结，$2\pi$ 脉冲仅在 $|01\rangle$ 和 $|10\rangle$ 子空间产生相位。
+  </div>
+
+  <h3>6.3 门保真度与误差源</h3>
+  <table>
+    <tr><th>误差源</th><th>机制</th><th>影响</th><th>缓解策略</th></tr>
+    <tr><td>里德堡态有限寿命</td><td>$|r\rangle$ 自发辐射衰减，寿命 $\sim 100-300\ \mu\text{s}$</td><td>退相干</td><td>缩短脉冲，使用更高主量子数（寿命 $\propto n^3$）</td></tr>
+    <tr><td>阻塞泄漏</td><td>$V_0$ 有限，$|11\rangle$ 态仍有一小概率被激发</td><td>相位误差</td><td>增大 $V_0/\Omega$ 比值（减小间距或降低 $\Omega$）</td></tr>
+    <tr><td>原子热运动</td><td>光镊中原子位置涨落</td><td>$r$ 不确定 → $V_0$ 涨落 → 相位噪声</td><td>冷却至基态（振动量子数 $\bar{n} < 0.1$）</td></tr>
+    <tr><td>激光强度/相位噪声</td><td>$\Omega$ 和 $\phi$ 的随机涨落</td><td>旋转角度误差</td><td>使用低噪声激光器，复合脉冲序列</td></tr>
+  </table>
+
+  <div class="callout callout-accent2">
+    <strong>当前技术水平：</strong>单比特门保真度 $>0.999$，两比特 CZ 门保真度 $\sim 0.97-0.995$，
+    原子数 $\sim 256$（QuEra Aquila）。随着激光稳定性和原子冷却技术的进步，门保真度正在快速逼近容错阈值。
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section id="s7">
+  <h2><span class="sec-num">7</span>门编译 III：QAOA 核心操作 $e^{-i\gamma Z_i Z_j}$ 的分解</h2>
+
+  <h3>7.1 核心分解</h3>
+  <p>
+    QAOA 的相位分离层需要实现 $U_C(\gamma) = \prod_{(i,j)\in E} \exp(-i\gamma W_{ij} Z_i Z_j)$。
+    这是 QAOA 在中性原子上编译的<b>最关键步骤</b>——它利用了 CZ 门与 ZZ 相互作用的关系。
+  </p>
+
+  <div class="formula-box formula-box-blue">
+    <strong>关键恒等式：ZZ 旋转 → CZ + 单比特旋转</strong><br>
+    $$\exp(-i\theta Z_i Z_j) = \mathrm{CNOT}_{i\to j} \cdot R_{Z_j}(2\theta) \cdot \mathrm{CNOT}_{i\to j}$$
+    其中 $\mathrm{CNOT} = (I \otimes H) \cdot \mathrm{CZ} \cdot (I \otimes H)$。
+    更直接的形式：
+    $$\exp(-i\theta Z_i Z_j) = R_{Z_i}(\theta) \cdot R_{Z_j}(\theta) \cdot \mathrm{CZ}_{ij} \cdot R_{X_j}(\pi) \cdot \mathrm{CZ}_{ij} \cdot R_{X_j}(-\pi)$$
+  </div>
+
+  <h3>7.2 最优分解：基于 CZ 门的 ZZ 旋转</h3>
+  <p>标准电路实现（最干净的形式）：</p>
+
+  <div class="circuit-diagram">
+    $$\underbrace{\boxed{R_X(\frac{\pi}{2})}}_{H} \quad \boxed{\text{CZ}} \quad \underbrace{\boxed{R_Z(2\gamma W)}}_{ZZ(\gamma)} \quad \boxed{\text{CZ}} \quad \underbrace{\boxed{R_X(-\frac{\pi}{2})}}_{H^\dagger}$$
+  </div>
+
+  <p><b>每对 $(i,j)$ 的 $e^{-i\gamma W_{ij} Z_i Z_j}$ 消耗 2 个 CZ 门 + 若干个单比特门。</b></p>
+
+  <p>在中性原子上的具体编译：</p>
+  <ol>
+    <li><b>CZ 门：</b>通过 §6 描述的里德堡阻塞脉冲序列实现（~0.5 $\mu$s）。</li>
+    <li><b>$R_Z(2\gamma W_{ij})$：</b>虚拟 Z 旋转——零耗时，零误差。</li>
+    <li><b>$R_X(\pm\pi/2)$：</b>等价于 Hadamard 门（差一个全局相位），通过共振脉冲 $\Omega\tau = \pi/2$ 实现（~0.1 $\mu$s）。</li>
+  </ol>
+
+  <h3>7.3 资源估算</h3>
+  <table>
+    <tr><th>组件</th><th>每边消耗</th><th>备注</th></tr>
+    <tr><td>CZ 门</td><td>2 个</td><td>每对 $(i,j)$ 的 $ZZ$ 旋转需要 2 CZ</td></tr>
+    <tr><td>单比特 $R_X$</td><td>2 个（$+\pi/2, -\pi/2$）</td><td>等价于 Hadamard 对</td></tr>
+    <tr><td>虚拟 $R_Z$</td><td>1 个</td><td>$2\gamma W_{ij}$ 角度的虚拟旋转，零开销</td></tr>
+  </table>
+
+  <p>
+    对于 $|E|$ 条边的图，一层 QAOA 的相位分离需要 $2|E|$ 个 CZ 门。加上混合层的 $n$ 个 $R_X$，
+    <b>一层 QAOA 的总两比特门数为 $2|E|$</b>。对于稀疏图（如 3-regular，$|E| = 1.5n$），总门数 $\approx 3n$——非常 NISQ-友好。
+  </p>
+
+  <div class="callout callout-accent2">
+    <strong>直接实现 vs 分解：</strong>Nguyen et al. (2023) 提出了一种更高效的方案——
+    利用里德堡原子之间的<b>原生 ZZ 相互作用</b> $\sum C_6/r_{ij}^6 n_i n_j$ 直接实现 $e^{-i\gamma Z_i Z_j}$，
+    而不需要分解为 CZ + 单比特门。这需要在模拟模式（analog）和门模式（digital）之间切换。
+    对于某些硬件拓扑，这可以大幅减少电路深度。
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section id="s8">
+  <h2><span class="sec-num">8</span>完整 QAOA 电路编译：从高层算法到物理脉冲序列</h2>
+
+  <h3>8.1 端到端编译流程</h3>
+
+  <div class="circuit-diagram">
+    <div class="circuit-box accent">组合优化<br>问题</div>
+    <div class="circuit-arrow">→</div>
+    <div class="circuit-box">Ising<br>编码</div>
+    <div class="circuit-arrow">→</div>
+    <div class="circuit-box">QAOA<br>电路</div>
+    <div class="circuit-arrow">→</div>
+    <div class="circuit-box green">门分解<br>$\{R_X, R_Z, \mathrm{CZ}\}$</div>
+    <div class="circuit-arrow">→</div>
+    <div class="circuit-box">物理脉冲<br>序列</div>
+    <div class="circuit-arrow">→</div>
+    <div class="circuit-box accent">中性原子<br>执行</div>
+  </div>
+
+  <h3>8.2 一层 QAOA 的完整脉冲序列（MaxCut，$n$ 原子）</h3>
+
+  <div class="step-box step-blue">
+    <span class="step-label">阶段 0 · 初态制备</span>
+    <p>所有原子制备在 $|0\rangle$。施加全局 $R_Y(\pi/2)$ 脉冲 → $|+\rangle^{\otimes n}$。</p>
+    <p><b>脉冲参数：</b>$\Omega$ 均匀，$\phi = \pi/2$，$\tau = \pi/(2\Omega)$。</p>
+  </div>
+
+  <div class="step-box step-green">
+    <span class="step-label">阶段 1 · 相位分离层 $U_C(\gamma_1)$</span>
+    <p>对图的每条边 $(i,j)$（权重 $W_{ij}$），编译 $e^{-i\gamma_1 W_{ij} Z_i Z_j}$：</p>
+    <p style="margin-left:20px;">
+      <b>a.</b> 对原子 $i$ 和 $j$：$R_X(\pi/2)_i \otimes R_X(\pi/2)_j$（等效 Hadamard）<br>
+      <b>b.</b> 对原子对 $(i,j)$：施加 CZ 脉冲序列（里德堡阻塞 $\pi$-$2\pi$-$\pi$）<br>
+      <b>c.</b> 虚拟 $R_Z(2\gamma_1 W_{ij})_j$（零耗时）<br>
+      <b>d.</b> 再次施加 CZ 脉冲序列<br>
+      <b>e.</b> $R_X(-\pi/2)_i \otimes R_X(-\pi/2)_j$（逆 Hadamard）
+    </p>
+    <p><b>并行化策略：</b>不相交的边可以同时编译——例如图的最大匹配中的边可同时执行 CZ 门。</p>
+  </div>
+
+  <div class="step-box step-purple">
+    <span class="step-label">阶段 2 · 混合层 $U_B(\beta_1)$</span>
+    <p>对每个原子施加 $R_X(2\beta_1)$。</p>
+    <p><b>全局模式：</b>一束宽激光覆盖所有原子，单次脉冲完成。</p>
+  </div>
+
+  <div class="step-box step-blue">
+    <span class="step-label">阶段 3 · 重复层 + 测量</span>
+    <p>重复阶段 1-2 共 $p$ 次（使用不同的 $\gamma_\ell, \beta_\ell$）。</p>
+    <p>在计算基 $\{|0\rangle, |1\rangle\}$ 上测量所有原子 → 获得经典比特串 $z$，对应 MaxCut 的一个候选解。</p>
+    <p>重复采样 $N_{\text{shots}}$ 次，计算 $C(z)$ 的统计期望值，反馈给经典优化器。</p>
+  </div>
+
+  <h3>8.3 电路深度分析</h3>
+  <p>
+    中性原子平台的一个显著优势是<b>长程相互作用</b>——CZ 门可以在非近邻原子之间实现（通过全局里德堡激光 + 局域寻址）。
+    这与超导量子比特（仅近邻耦合）形成鲜明对比。
+  </p>
+
+  <table>
+    <tr><th>平台</th><th>耦合拓扑</th><th>实现 $e^{-i\gamma Z_i Z_j}$（非近邻）</th><th>额外开销</th></tr>
+    <tr><td>超导（固定耦合）</td><td>近邻（2D grid）</td><td>需要 SWAP 网络</td><td>$O(\sqrt{n})$ 深度倍增</td></tr>
+    <tr><td>离子阱</td><td>全连接（all-to-all）</td><td>Mølmer-Sørensen 门，直接实现</td><td>最小</td></tr>
+    <tr><td><b>中性原子（局域寻址）</b></td><td><b>任意</b>（激光控制）</td><td>直接对原子对施加 CZ</td><td><b>无需 SWAP</b></td></tr>
+  </table>
+
+  <div class="callout callout-success">
+    <strong>电路深度优势：</strong>中性原子 QAOA 的最大深度由<b>最大边度数</b>决定（而非图的直径），
+    因为共享顶点的边不能同时编译。对于 $d$-regular 图，一层 QAOA 的 CZ 门深度约为 $O(d)$。
+    这使中性原子特别适合<b>稀疏图的 QAOA</b>。
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section id="s9">
+  <h2><span class="sec-num">9</span>进阶：XY 混合算符与约束优化</h2>
+
+  <h3>9.1 超越标准混合器</h3>
+  <p>
+    标准 QAOA 使用 $H_B = \sum_i X_i$，其基态 $|+\rangle^{\otimes n}$ 是所有 $2^n$ 个可能解的等权叠加。
+    但对于<b>带约束</b>的组合优化问题（如图着色、排产调度、电力机组组合 UC），
+    绝大多数比特串是<b>非法的</b>——它们违反了一个或多个约束。
+  </p>
+
+  <p><b>XY 混合算符</b>（Wang, Rubin, Dominy &amp; Rieffel, Phys. Rev. A 101, 012320, 2020）解决了这一挑战。</p>
+
+  <h3>9.2 XY 混合器的物理形式</h3>
+  <p>对于 one-hot 编码的约束变量（如每个节点恰好分配一种颜色），可行子空间是 Hamming 权重为 1 的态。XY 混合器定义为：</p>
+
+  <div class="formula-box formula-box-blue">
+    <strong>XY 混合哈密顿量</strong><br>
+    $$H_{XY} = \sum_{(a,b) \in E_{\text{mixer}}} X_a X_b + Y_a Y_b = \sum_{(a,b)} (\sigma^+_a \sigma^-_b + \sigma^-_a \sigma^+_b)$$
+    其中 $E_{\text{mixer}}$ 是混合器图（对于 $k$ 个量子比特的 one-hot 编码，$E_{\text{mixer}}$ 通常是完全图 $K_k$ 或环）。
+  </div>
+
+  <p>关键性质：$H_{XY}$ <b>保持 Hamming 权重不变</b>。$[\sum_i Z_i, H_{XY}] = 0$，因此演化后的量子态自动留在可行子空间内——不需要惩罚项。</p>
+
+  <h3>9.3 XY 混合器的门编译</h3>
+  <p>$e^{-i\beta (X_a X_b + Y_a Y_b)}$ 等价于在 $(a,b)$ 量子比特对上的 $R_{XY}(\beta)$ 旋转。标准分解：</p>
+
+  <div class="formula-box formula-box-teal">
+    $$\exp(-i\beta (X_a X_b + Y_a Y_b)) = \mathrm{CNOT}_{a\to b} \cdot R_{X_b}(2\beta) \cdot \mathrm{CNOT}_{a\to b}$$
+    或等价使用 CZ：
+    $$= (I \otimes H)_b \cdot \mathrm{CZ}_{ab} \cdot R_{X_b}(2\beta) \cdot \mathrm{CZ}_{ab} \cdot (I \otimes H)_b$$
+  </div>
+
+  <p><b>每对 $(a,b)$：2 个 CZ 门 + 1 个 $R_X$ 旋转。</b></p>
+
+  <h3>9.4 XY 混合器 vs 标准 X 混合器</h3>
+  <table>
+    <tr><th>特性</th><th>标准 $X$ 混合器</th><th>XY 混合器</th></tr>
+    <tr><td>可行子空间</td><td>需要惩罚项强制约束</td><td><b>自动保持</b>（对称性保护）</td></tr>
+    <tr><td>初始态制备</td><td>$|+\rangle^{\otimes n}$（平凡）</td><td>$W$ 态 $|W_k\rangle = \frac{1}{\sqrt{k}}\sum_{j=1}^k |0\cdots 1_j \cdots 0\rangle$（需编译）</td></tr>
+    <tr><td>两比特门开销</td><td>0 个（混合层仅单比特门）</td><td>$-1$ 个（每对 mixer 边需 2 CZ，但仅 on-block-diagonal 连接）</td></tr>
+    <tr><td>近似比（图着色）</td><td>较低（惩罚项稀释信号）</td><td><b>显著更高</b>（演化在可行子空间内进行）</td></tr>
+    <tr><td>电路深度</td><td>$O(1)$</td><td>$O(k)$ 或 $O(\log k)$（取决于拓扑）</td></tr>
+  </table>
+
+  <div class="callout callout-highlight">
+    <strong>电力现货出清 (UC) 的应用：</strong>机组组合问题天然适合 XY 混合器——每台机组的启停状态是一组 one-hot（或 binary-encoded）
+    变量，爬坡约束和最小启停时间约束定义了变量之间的合法转移。XY 混合器保证优化搜索<b>不离开物理可行域</b>，
+    避免大量不可行解的无效采样。
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section id="s10">
+  <h2><span class="sec-num">10</span>总结：中性原子 QAOA 的完整技术栈</h2>
+
+  <h3>10.1 技术栈全景图</h3>
+
+  <div class="circuit-diagram" style="flex-direction: column; gap: 6px;">
+    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:center;">
+      <div class="circuit-box accent" style="min-width:120px;">应用层<br><small>电力出清 · 物流 · 金融</small></div>
+      <div class="circuit-arrow">↑</div>
+    </div>
+    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:center;">
+      <div class="circuit-box" style="min-width:120px;">问题编码<br><small>Ising / QUBO</small></div>
+      <div class="circuit-arrow">↑</div>
+    </div>
+    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:center;">
+      <div class="circuit-box green" style="min-width:120px;">QAOA 算法<br><small>$p$ 层变分电路</small></div>
+      <div class="circuit-arrow">↑</div>
+    </div>
+    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:center;">
+      <div class="circuit-box" style="min-width:120px;">门分解<br><small>$e^{-i\gamma ZZ} \to \mathrm{CZ}+R_Z+R_X$</small></div>
+      <div class="circuit-arrow">↑</div>
+    </div>
+    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:center;">
+      <div class="circuit-box accent" style="min-width:200px;">物理脉冲<br><small>里德堡阻塞 CZ · 共振 Rabi · 虚拟 Z</small></div>
+      <div class="circuit-arrow">↑</div>
+    </div>
+    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:center;">
+      <div class="circuit-box green" style="min-width:200px;">中性原子硬件<br><small>光镊阵列 · $^{87}$Rb · 256+ 原子</small></div>
+    </div>
+  </div>
+
+  <h3>10.2 关键公式速查</h3>
+  <div class="table-wrap">
+  <table>
+    <tr><th>层级</th><th>公式</th><th>物理解释</th></tr>
+    <tr><td>问题</td><td>$H_C = \sum W_{ij} Z_i Z_j$</td><td>MaxCut Ising 哈密顿量</td></tr>
+    <tr><td>QAOA</td><td>$|\psi\rangle = \prod_\ell e^{-i\beta_\ell H_B} e^{-i\gamma_\ell H_C} |+\rangle^{\otimes n}$</td><td>$p$ 层变分 ansatz</td></tr>
+    <tr><td>门分解 (ZZ)</td><td>$e^{-i\gamma ZZ} = (H\otimes I)\mathrm{CZ}(I\otimes R_Z(2\gamma))\mathrm{CZ}(H\otimes I)$</td><td>每边 2 CZ + 单比特门</td></tr>
+    <tr><td>里德堡哈密顿量</td><td>$H = \frac{\Omega}{2}\sum\sigma^x_i - \Delta\sum n_i + \sum\frac{C_6}{r_{ij}^6}n_i n_j$</td><td>光镊中原子阵列的完整哈密顿量</td></tr>
+    <tr><td>阻塞半径</td><td>$R_b = (C_6/\Omega)^{1/6}$</td><td>范德瓦尔斯阻塞条件</td></tr>
+    <tr><td>CZ 门</td><td>$\pi$-$2\pi$-$\pi$ 里德堡脉冲序列</td><td>物理实现 $\diag(1,1,1,-1)$</td></tr>
+    <tr><td>XY 混合器</td><td>$H_{XY} = \sum (X_a X_b + Y_a Y_b)$</td><td>保持 Hamming 权重的约束优化</td></tr>
+  </table>
+  </div>
+
+  <h3>10.3 中性原子 QAOA 的独特优势</h3>
+  <ol>
+    <li><b>任意连通性：</b>激光寻址使 CZ 门可以在任意原子对之间执行，无需 SWAP 网络——QAOA 电路的 $ZZ$ 相互作用直接编译，电路深度不受图直径限制。</li>
+    <li><b>全局单比特门：</b>$R_X$ 可以通过宽激光同时施加于所有原子——混合层深度为 1。</li>
+    <li><b>双模式能力：</b>模拟模式（原生 MIS）和门模式（QAOA）可混合——例如用模拟模式做子图级 MIS，用门模式做合并优化。</li>
+    <li><b>可扩展性：</b>中性原子技术路线的可扩展性佳——结合 QAOA² 分治框架，可处理数万顶点级实际问题。</li>
+  </ol>
+
+  <div class="callout callout-accent2">
+    <strong>面向电力现货出清的技术路线：</strong>
+    UC → QUBO（带约束）→ 约束 QAOA（XY 混合器）→ 门分解（CZ + 虚拟 Z）→ 中性原子脉冲序列。
+    这一路线将组合优化的理论优雅性与中性原子硬件的物理优势完整串联。
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section>
+  <h2><span class="sec-num">§</span>参考文献</h2>
+  <ol style="font-size:0.88rem;">
+    <li>E. Farhi, J. Goldstone, and S. Gutmann, "A Quantum Approximate Optimization Algorithm," arXiv:1411.4028 (2014).</li>
+    <li>S. Ebadi et al., "Quantum Optimization of Maximum Independent Set Using Rydberg Atom Arrays," <em>Science</em> <b>376</b>, 1209 (2022).</li>
+    <li>M.-T. Nguyen, J.-G. Liu, J. Wurtz, M. D. Lukin, S.-T. Wang, and H. Pichler, "Quantum Optimization with Arbitrary Connectivity Using Rydberg Atom Arrays," <em>PRX Quantum</em> <b>4</b>, 010316 (2023).</li>
+    <li>Z. Wang, N. C. Rubin, J. M. Dominy, and E. G. Rieffel, "XY Mixers: Analytical and Numerical Results for the Quantum Alternating Operator Ansatz," <em>Phys. Rev. A</em> <b>101</b>, 012320 (2020).</li>
+    <li>S. Hadfield, Z. Wang, B. O'Gorman, E. G. Rieffel, D. Venturelli, and R. Biswas, "From the Quantum Approximate Optimization Algorithm to a Quantum Alternating Operator Ansatz," <em>Algorithms</em> <b>12</b>, 34 (2019).</li>
+    <li>A. Lucas, "Ising Formulations of Many NP Problems," <em>Front. Phys.</em> <b>2</b>, 5 (2014).</li>
+    <li>D. Jaksch, J. I. Cirac, P. Zoller, S. L. Rolston, R. Côté, and M. D. Lukin, "Fast Quantum Gates for Neutral Atoms," <em>Phys. Rev. Lett.</em> <b>85</b>, 2208 (2000).</li>
+    <li>L. Henriet, L. Beguin, A. Signoles, T. Lahaye, A. Browaeys, G.-O. Reymond, and C. Jurczak, "Quantum Computing with Neutral Atoms," <em>Quantum</em> <b>4</b>, 327 (2020).</li>
+    <li>Z. Zhou, Y. Du, X. Tian, and D. Tao, "QAOA-in-QAOA: Solving Large-Scale MaxCut Problems on Small Quantum Machines," <em>Phys. Rev. Applied</em> <b>19</b>, 024027 (2023).</li>
+    <li>R. Herrman, L. Treffert, J. Ostrowski, P. C. Lotshaw, T. S. Humble, and G. Siopsis, "Impact of Graph Structures for QAOA on MaxCut," <em>Quantum Inf. Process.</em> <b>20</b>, 289 (2021).</li>
+    <li>J. Preskill, "Quantum Computing in the NISQ Era and Beyond," <em>Quantum</em> <b>2</b>, 79 (2018).</li>
+    <li>M. Cerezo, A. Arrasmith, R. Babbush, et al., "Variational Quantum Algorithms," <em>Nat. Rev. Phys.</em> <b>3</b>, 625 (2021).</li>
+  </ol>
+</section>
+
+<div class="footer">
+  <p>讲义生成日期：2026 年 7 月 24 日 &nbsp;|&nbsp; 基于中性原子量子计算平台 &nbsp;|&nbsp; 参考文献：QuEra / Harvard / Pasqal / USTC 相关工作</p>
+  <p>格式：用户 lecture-html-style 讲义模板 &nbsp;|&nbsp; 公式渲染：MathJax 3 (SVG)</p>
+</div>
+
+</body>
+</html>

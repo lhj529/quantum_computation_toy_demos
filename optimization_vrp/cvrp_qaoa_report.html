@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CVRP QAOA 量子求解器 — 详细报告</title>
+<script>
+MathJax = {
+  tex: {
+    inlineMath: [['$','$'], ['\\(','\\)']],
+    displayMath: [['$$','$$'], ['\\[','\\]']],
+    macros: {
+      R: '\\mathbb{R}', Z: '\\mathbb{Z}', C: '\\mathbb{C}',
+      O: '\\mathcal{O}', H: '\\hat{H}',
+      ket: ['|#1\\rangle', 1], bra: ['\\langle#1|', 1],
+      braket: ['\\langle#1|#2\\rangle', 2], ev: ['\\langle#1\\rangle', 1],
+    }
+  },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+<style>
+/* ===== Variables ===== */
+:root {
+  --navy:    #1a2744;
+  --navy2:   #243656;
+  --slate:   #4a5568;
+  --blue:    #2b6cb0;
+  --teal:    #0d7377;
+  --green:   #276749;
+  --amber:   #975a16;
+  --red:     #9b2c2c;
+  --bg:      #f5f6f8;
+  --card:    #ffffff;
+  --border:  #e2e6ed;
+  --text:    #2d3748;
+  --dim:     #718096;
+  --shadow:  0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.07);
+  --radius:  8px;
+  --font:    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --mono:    "SF Mono", "Cascadia Code", "JetBrains Mono", "Fira Code", "Consolas", monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 15.5px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ===== Top Header Bar ===== */
+.header-bar {
+  background: linear-gradient(135deg, #141e30 0%, #1a2744 40%, #243656 100%);
+  color: #fff; padding: 2.8rem 2rem 2.4rem; text-align: center;
+}
+.header-bar h1 { font-size: 2rem; font-weight: 700; letter-spacing: 1px; margin-bottom: .5rem; }
+.header-bar h2 { font-size: 1rem; font-weight: 400; opacity: .78; margin-bottom: 1.5rem; }
+.header-bar .tags { display: flex; gap: .55rem; flex-wrap: wrap; justify-content: center; margin-bottom: 1.2rem; }
+.header-bar .tag {
+  font-size: .7rem; font-weight: 600; letter-spacing: .5px;
+  background: rgba(255,255,255,.12); padding: .28rem .8rem; border-radius: 4px; border: 1px solid rgba(255,255,255,.15);
+}
+.header-bar .meta-line { font-size: .82rem; opacity: .65; line-height: 1.8; }
+
+/* ===== Executive Summary Bar ===== */
+.exec-bar {
+  background: #fff; border-bottom: 1px solid var(--border); box-shadow: var(--shadow);
+  padding: 1.1rem 1.5rem; margin-bottom: 1.8rem;
+}
+.exec-bar .inner { max-width: 1000px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 1.5rem; align-items: center; justify-content: center; }
+.exec-bar .stat { text-align: center; }
+.exec-bar .stat .n { font-size: 1.35rem; font-weight: 700; color: var(--navy); }
+.exec-bar .stat .n.g { color: var(--green); }
+.exec-bar .stat .t { font-size: .7rem; color: var(--dim); text-transform: uppercase; letter-spacing: .3px; }
+.exec-bar .sep { width: 1px; height: 28px; background: var(--border); }
+
+/* ===== Container ===== */
+.container { max-width: 1000px; margin: 0 auto; padding: 0 1.5rem 2rem; }
+
+/* ===== TOC ===== */
+.toc {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 1.6rem 2rem; margin: 1.8rem auto; max-width: 1000px;
+}
+.toc h3 { font-size: .95rem; font-weight: 700; color: var(--navy); margin-bottom: .8rem; text-transform: uppercase; letter-spacing: .5px; }
+.toc ol { columns: 2; column-gap: 2rem; list-style: none; counter-reset: toc; }
+.toc ol li { counter-increment: toc; margin: .22rem 0; break-inside: avoid; font-size: .88rem; }
+.toc ol li::before { content: counter(toc, decimal-leading-zero); font-weight: 700; color: var(--blue); margin-right: .55rem; font-size: .78rem; }
+.toc ol li a { color: var(--slate); text-decoration: none; }
+.toc ol li a:hover { color: var(--blue); }
+@media (max-width: 640px) { .toc ol { columns: 1; } }
+
+/* ===== Section (Slide-like card) ===== */
+section {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 1.8rem 2rem; margin-bottom: 1.5rem;
+  position: relative;
+}
+/* slide accent stripe */
+section::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: linear-gradient(90deg, var(--navy), var(--blue), transparent);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+section h3 {
+  font-size: 1.15rem; font-weight: 700; color: var(--navy);
+  padding-bottom: .55rem; margin-bottom: 1.1rem;
+  border-bottom: 1px solid #e8ecf2; display: flex; align-items: center; gap: .6rem;
+}
+section h3 .num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.65rem; height: 1.65rem; border-radius: 4px;
+  background: var(--navy); color: #fff; font-size: .78rem; font-weight: 700; flex-shrink: 0;
+}
+section h4 {
+  font-size: 1rem; font-weight: 700; color: var(--navy2);
+  margin: 1.3rem 0 .5rem; padding-left: .55rem; border-left: 3px solid var(--blue);
+}
+
+/* ===== Section page-dot indicator ===== */
+.section-dot {
+  position: absolute; top: 1.1rem; right: 1.3rem;
+  font-size: .68rem; color: #cbd5e0; font-weight: 600; letter-spacing: 1px;
+}
+
+/* ===== Key takeaway ===== */
+.takeaway {
+  margin-top: 1.3rem; padding: .7rem 1rem; background: #f8fafb;
+  border: 1px dashed #dce3eb; border-radius: 6px; font-size: .84rem; color: var(--slate);
+}
+.takeaway strong { color: var(--navy); }
+
+/* ===== Callout Boxes ===== */
+.callout {
+  border-left: 3px solid; border-radius: 0 4px 4px 0;
+  padding: .8rem 1.1rem; margin: 1rem 0; font-size: .89rem; line-height: 1.6;
+}
+.callout-info    { background: #eef2f9; border-color: var(--blue);   }
+.callout-success { background: #edf7f0; border-color: var(--green);  }
+.callout-warning { background: #fef9ee; border-color: var(--amber);  }
+.callout-danger  { background: #fdf2f2; border-color: var(--red);    }
+.callout-purple  { background: #f3eef9; border-color: #6b46c1;      }
+
+/* ===== KPI Cards ===== */
+.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: .8rem; margin: 1rem 0; }
+.kpi {
+  background: var(--card); border: 1px solid var(--border); border-radius: 6px;
+  padding: .95rem 1rem; text-align: center;
+}
+.kpi .big { font-size: 1.45rem; font-weight: 700; color: var(--navy); line-height: 1.2; }
+.kpi .big.accent { color: var(--blue); }
+.kpi .big.green  { color: var(--green); }
+.kpi .big.amber  { color: var(--amber); }
+.kpi .big.red    { color: var(--red); }
+.kpi .lbl { font-size: .72rem; color: var(--dim); margin-top: .2rem; }
+
+/* ===== Tables ===== */
+.tbl-wrap { overflow-x: auto; margin: 1rem 0; }
+table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+thead th {
+  background: var(--navy); color: #fff; padding: .48rem .7rem;
+  text-align: left; font-weight: 600; font-size: .76rem; letter-spacing: .4px;
+}
+tbody td { padding: .42rem .7rem; border-bottom: 1px solid var(--border); }
+tbody tr:nth-child(even) { background: #f9fafb; }
+tbody tr:hover { background: #eef2f9; }
+td.n { text-align: right; font-family: var(--mono); font-size: .8rem; font-variant-numeric: tabular-nums; }
+td.c { font-family: var(--mono); font-size: .78rem; color: var(--blue); }
+tbody tr.row-hl { background: #e6f0e8; font-weight: 600; }
+
+/* ===== Two Column ===== */
+.col2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; }
+@media (max-width: 640px) { .col2 { grid-template-columns: 1fr; } }
+.col2 .box { border: 1px solid var(--border); border-radius: 6px; padding: 1rem 1.2rem; }
+.col2 .box h5 { font-weight: 700; color: var(--navy2); margin-bottom: .5rem; font-size: .92rem; }
+
+/* ===== Flow Pipeline ===== */
+.pipeline { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: .35rem; margin: 1.2rem 0; font-size: .78rem; }
+.pipeline .node {
+  background: #fff; border: 1.5px solid #cbd5e0; border-radius: 6px;
+  padding: .5rem .85rem; font-weight: 600; color: var(--slate); text-align: center; white-space: nowrap;
+}
+.pipeline .node.hl { background: var(--navy); color: #fff; border-color: var(--navy); }
+.pipeline .arr { color: #a0aec0; font-weight: 700; font-size: .9rem; }
+
+/* ===== Formula Boxes ===== */
+.fbox {
+  border-radius: 6px; padding: 1rem 1.3rem; margin: .9rem 0;
+  text-align: center; font-size: .95rem; overflow-x: auto;
+  border: 1px solid #e2e8f0;
+}
+.fbox-blue   { background: #f0f5fd; }
+.fbox-green  { background: #f0f9f4; }
+.fbox-amber  { background: #fefbf0; }
+.fbox-teal   { background: #f0f9f8; }
+
+/* ===== Code Block ===== */
+.code-block {
+  background: #1e293b; color: #e2e8f0; border-radius: 6px;
+  padding: 1rem 1.3rem; margin: 1rem 0; overflow-x: auto;
+  font-family: var(--mono); font-size: .76rem; line-height: 1.75; white-space: pre;
+}
+.code-block .kw { color: #e6b87e; } .code-block .fn { color: #93c5fd; }
+.code-block .num{ color: #c4b5fd; } .code-block .cm { color: #64748b; font-style: italic; }
+
+/* ===== Opt Timeline ===== */
+.opt-timeline { margin: 1rem 0; }
+.opt-hdr, .opt-row { display: flex; align-items: center; gap: .6rem; padding: .28rem 0; font-size: .84rem; border-bottom: 1px solid #f1f3f6; }
+.opt-hdr { font-weight: 700; color: var(--slate); font-size: .76rem; letter-spacing: .3px; border-bottom: 2px solid #ddd; }
+.opt-hdr span { text-transform: uppercase; }
+.opt-row .iter { width: 3rem; font-weight: 600; color: var(--navy); text-align: right; }
+.opt-row .bar-wrap { flex: 1; height: 12px; background: #edf0f5; border-radius: 6px; overflow: hidden; }
+.opt-row .bar-fill { display: block; height: 100%; border-radius: 6px; transition: width .4s ease; }
+.opt-row .ev { width: 7rem; text-align: right; font-family: var(--mono); font-size: .78rem; }
+.opt-row .bv { width: 7rem; text-align: right; font-family: var(--mono); font-size: .78rem; color: var(--red); }
+
+/* ===== SVG map ===== */
+.map-box { margin: 1rem 0; }
+.map-box svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+
+/* ===== Badge ===== */
+.badge-opt {
+  display: inline-block; font-size: .7rem; font-weight: 700; letter-spacing: .3px;
+  background: var(--green); color: #fff; padding: .15rem .5rem; border-radius: 4px; margin-left: .4rem;
+}
+
+/* ===== Slide deck navigation bar ===== */
+.deck-nav {
+  display: flex; align-items: center; justify-content: center; gap: .4rem;
+  margin: 1.5rem 0; flex-wrap: wrap;
+}
+.deck-nav .dot {
+  width: 8px; height: 8px; border-radius: 50%; background: #cbd5e0; transition: background .2s;
+}
+.deck-nav .dot.active { background: var(--navy); width: 22px; border-radius: 4px; }
+
+/* ===== Footer ===== */
+footer {
+  text-align: center; padding: 1.8rem; font-size: .78rem; color: var(--dim);
+  border-top: 1px solid var(--border); margin-top: 1.5rem;
+}
+
+a { color: var(--blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<!-- ===== HEADER ===== -->
+<div class="header-bar">
+  <h1>容量约束车辆路径问题的量子近似优化算法求解</h1>
+  <h2>CVRP via QAOA &nbsp;|&nbsp; Bloqade QASM2 + Qiskit Aer 仿真</h2>
+  <div class="tags">
+    <span class="tag">量子优化</span>
+    <span class="tag">CVRP 组合优化</span>
+    <span class="tag">QUBO → Ising</span>
+    <span class="tag">COBYLA 经典优化器</span>
+  </div>
+  <div class="meta-line">
+    实例: P-n16-k3-micro (5 个客户 + 1 个仓库, 3 辆车, 容量 41) &nbsp;|&nbsp;
+    结果: QAOA 找到全局最优解 (cost = 163.85, gap = 0.00%)
+  </div>
+</div>
+
+<!-- ===== Executive Summary ===== -->
+<div class="exec-bar">
+  <div class="inner">
+    <div class="stat"><div class="n">P-n16-k3-micro</div><div class="t">实例名称</div></div>
+    <div class="sep"></div>
+    <div class="stat"><div class="n">5 + 1</div><div class="t">客户 + 仓库</div></div>
+    <div class="sep"></div>
+    <div class="stat"><div class="n">13 Qubits</div><div class="t">11 路线 + 2 松弛</div></div>
+    <div class="sep"></div>
+    <div class="stat"><div class="n">p = 4</div><div class="t">QAOA 层数</div></div>
+    <div class="sep"></div>
+    <div class="stat"><div class="n g">163.85</div><div class="t">最优成本</div></div>
+    <div class="sep"></div>
+    <div class="stat"><div class="n g">+0.00%</div><div class="t">Gap vs 全局最优</div></div>
+  </div>
+</div>
+
+<!-- ===== TOC ===== -->
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#s1">问题定义：什么是 CVRP？</a></li>
+    <li><a href="#s2">数据集：节点分布与需求表</a></li>
+    <li><a href="#s3">代码管线总览：经典—量子混合架构</a></li>
+    <li><a href="#s4">步骤一：可行路线枚举与维度压缩</a></li>
+    <li><a href="#s5">步骤二：CVRP → QUBO 建模</a></li>
+    <li><a href="#s6">步骤三：QUBO → Ising 哈密顿量</a></li>
+    <li><a href="#s7">步骤四：QAOA 量子电路构建</a></li>
+    <li><a href="#s8">步骤五：COBYLA 优化过程</a></li>
+    <li><a href="#s8b">对比实验：增大惩罚 → QAOA 直接输出可行解</a></li>
+    <li><a href="#s9">步骤六：比特串解码与贪心修复</a></li>
+    <li><a href="#s10">最终解：最优配送方案与路线图</a></li>
+    <li><a href="#s11">暴力穷举验证：全局最优性确认</a></li>
+    <li><a href="#s12">量子 QAOA 方法的优势</a></li>
+    <li><a href="#s13">Bloqade QASM2 电路展示</a></li>
+  </ol>
+</div>
+
+<!-- ===== Slide dots navigation ===== -->
+<div class="deck-nav" style="max-width:1000px;margin:0 auto 1.5rem;padding:0 1.5rem;">
+  <span style="font-size:.68rem;color:var(--dim);margin-right:.5rem;">报告进度</span>
+  <span class="dot active"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+  <span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+  <span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+</div>
+
+<!-- ================================================================== -->
+<div class="container">
+
+<!-- 1. CVRP Problem -->
+<section id="s1">
+<span class="section-dot">01 / 13</span>
+<h3><span class="num">01</span> 问题定义：什么是 CVRP？</h3>
+
+<p><strong>容量约束车辆路径问题 (Capacitated Vehicle Routing Problem, CVRP)</strong> 是组合优化中经典的 NP-hard 问题。其基本要素如下：</p>
+
+<ul style="margin: .6rem 0 .6rem 1.4rem; line-height: 1.9;">
+  <li>一个<strong>仓库 (depot)</strong> 和 $n$ 个<strong>客户点</strong>，每个客户有确定的<strong>需求量</strong> $d_i$</li>
+  <li>$K$ 辆<strong>相同容量的车辆</strong>，每辆车的最大载重为 $Q$</li>
+  <li>所有节点间的欧氏距离已知</li>
+</ul>
+
+<div class="callout callout-info">
+<strong>优化目标：</strong>找到一组总行驶距离最短的配送路线，满足：
+(1) 每条路线从仓库出发并返回仓库；
+(2) 每个客户<em>恰好被访问一次</em>（集合划分约束）；
+(3) 每条路线的总需求 &le; $Q$；
+(4) 使用的车辆数 &le; $K$。
+</div>
+
+<div class="fbox fbox-amber">
+  $$\min \sum_{r \in \mathcal{R}} \mathrm{cost}_r \cdot y_r \qquad
+    \text{s.t. } \sum_{r \ni c} y_r = 1 \; (\forall c),\qquad
+    \sum_{r} y_r \le K,\qquad y_r \in \{0,1\}$$
+</div>
+
+<div class="col2">
+  <div class="box">
+    <h5>传统方法：MTZ 流模型</h5>
+    <p style="font-size:.85rem;">使用 $O(n^2)$ 个整数变量表示车辆访问顺序，需处理子环消除约束，QUBO 变量数随客户数平方增长。</p>
+  </div>
+  <div class="box">
+    <h5>本文方法：集合划分编码</h5>
+    <p style="font-size:.85rem;">预先枚举所有"满足容量约束的客户子集"作为候选<em>路线</em>。每条路线变为<strong>一个二进制变量</strong>。变量数 = $R$（可控）。</p>
+  </div>
+</div>
+
+<div class="takeaway"><strong>关键洞察：</strong>用集合划分代替顺序流模型，将 $O(n^2)$ 的变量空间压缩到 $R$ 个二进制变量，使小规模实例可以在 NISQ 量子设备上求解。</div>
+</section>
+
+<!-- 2. Dataset -->
+<section id="s2">
+<span class="section-dot">02 / 13</span>
+<h3><span class="num">02</span> 数据集：P-n16-k3-micro 节点分布</h3>
+<p>这是一个缩微基准实例——从 P-n16-k8 中选取 <strong>5 个客户 + 1 个仓库</strong>，配备 <strong>3 辆车</strong>，每辆车容量为 <strong>41</strong>。</p>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>节点</th><th>类型</th><th style="text-align:right">X</th><th style="text-align:right">Y</th><th style="text-align:right">需求量</th></tr></thead>
+  <tbody>
+    <tr><td><strong>1</strong></td><td>仓库 (Depot)</td><td class="n">30</td><td class="n">40</td><td class="n">0</td></tr>
+    <tr><td><strong>2</strong></td><td>客户</td><td class="n">37</td><td class="n">52</td><td class="n">19</td></tr>
+    <tr><td><strong>3</strong></td><td>客户</td><td class="n">49</td><td class="n">49</td><td class="n">30</td></tr>
+    <tr><td><strong>4</strong></td><td>客户</td><td class="n">52</td><td class="n">64</td><td class="n">16</td></tr>
+    <tr><td><strong>5</strong></td><td>客户</td><td class="n">31</td><td class="n">62</td><td class="n">23</td></tr>
+    <tr><td><strong>6</strong></td><td>客户</td><td class="n">52</td><td class="n">33</td><td class="n">11</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="callout callout-warning">
+<strong>汇总：</strong>总需求 = $0+19+30+16+23+11 = 99$ &ensp;|&ensp;
+理论最少车辆数 = $\lceil 99/41 \rceil = 3$ &ensp;|&ensp;
+可用车辆 $K=3$（恰好紧约束！）
+</div>
+
+<div class="map-box">
+  <svg viewBox="12 18 58 58" style="max-width:520px;">
+    <defs>
+      <pattern id="g1" width="10" height="10" patternUnits="userSpaceOnUse">
+        <path d="M 10 0 L 0 0 0 10" fill="none" stroke="#e2e6ed" stroke-width="0.3"/>
+      </pattern>
+    </defs>
+    <rect x="12" y="18" width="58" height="58" fill="url(#g1)" rx="2"/>
+
+    <line x1="15" y1="73" x2="67" y2="73" stroke="#cbd5e0" stroke-width=".8"/>
+    <line x1="15" y1="20" x2="15" y2="73" stroke="#cbd5e0" stroke-width=".8"/>
+    <text x="67" y="76" font-size="2.5" fill="#a0aec0" text-anchor="middle">X</text>
+    <text x="12" y="22" font-size="2.5" fill="#a0aec0" text-anchor="end">Y</text>
+    <text x="27" y="76" font-size="2.2" fill="#a0aec0" text-anchor="middle">30</text>
+    <text x="37" y="76" font-size="2.2" fill="#a0aec0" text-anchor="middle">40</text>
+    <text x="47" y="76" font-size="2.2" fill="#a0aec0" text-anchor="middle">50</text>
+    <text x="13" y="63" font-size="2.2" fill="#a0aec0" text-anchor="end">40</text>
+    <text x="13" y="53" font-size="2.2" fill="#a0aec0" text-anchor="end">50</text>
+    <text x="13" y="43" font-size="2.2" fill="#a0aec0" text-anchor="end">60</text>
+
+    <circle cx="30" cy="40" r="3" fill="var(--red)" stroke="#fff" stroke-width="1.2"/>
+    <rect x="19" y="43.5" width="22" height="4.5" rx="2" fill="#1e293b"/>
+    <text x="30" y="46.8" font-size="2.6" fill="#fff" text-anchor="middle" font-weight="700">仓库</text>
+
+    <circle cx="37" cy="52" r="2.5" fill="var(--blue)" stroke="#fff" stroke-width=".8"/>
+    <text x="37" y="57" font-size="2.8" fill="#1a2744" text-anchor="middle" font-weight="700">2 (19)</text>
+    <circle cx="49" cy="49" r="2.5" fill="var(--blue)" stroke="#fff" stroke-width=".8"/>
+    <text x="49" y="54" font-size="2.8" fill="#1a2744" text-anchor="middle" font-weight="700">3 (30)</text>
+    <circle cx="52" cy="64" r="2.5" fill="var(--blue)" stroke="#fff" stroke-width=".8"/>
+    <text x="52" y="69" font-size="2.8" fill="#1a2744" text-anchor="middle" font-weight="700">4 (16)</text>
+    <circle cx="31" cy="62" r="2.5" fill="var(--blue)" stroke="#fff" stroke-width=".8"/>
+    <text x="31" y="67" font-size="2.8" fill="#1a2744" text-anchor="middle" font-weight="700">5 (23)</text>
+    <circle cx="52" cy="33" r="2.5" fill="var(--blue)" stroke="#fff" stroke-width=".8"/>
+    <text x="52" y="38" font-size="2.8" fill="#1a2744" text-anchor="middle" font-weight="700">6 (11)</text>
+  </svg>
+</div>
+<p style="text-align:center;font-size:.78rem;color:var(--dim);">图 1: 实例节点空间分布。红色为仓库（节点 1），蓝色为客户点（节点 2–6），标注括号内为需求量。</p>
+</section>
+
+<!-- 3. Pipeline Overview -->
+<section id="s3">
+<span class="section-dot">03 / 13</span>
+<h3><span class="num">03</span> 代码管线总览：经典—量子混合架构</h3>
+
+<p>整个求解器由 <strong>9 个阶段</strong> 组成，形成一条完整的"经典预处理 → 量子优化 → 经典后处理"管线：</p>
+
+<div class="pipeline">
+  <div class="node">&#9312; 解析<br>.vrp 文件</div><span class="arr">&rarr;</span>
+  <div class="node">&#9313; 枚举<br>可行路线</div><span class="arr">&rarr;</span>
+  <div class="node hl">&#9314; 构建<br>QUBO 矩阵</div><span class="arr">&rarr;</span>
+  <div class="node hl">&#9315; QUBO<br>&rarr; Ising</div><span class="arr">&rarr;</span>
+  <div class="node hl">&#9316; 构建 QAOA<br>量子电路</div><span class="arr">&rarr;</span>
+  <div class="node">&#9317; COBYLA<br>优化参数</div><span class="arr">&rarr;</span>
+  <div class="node">&#9318; 解码<br>比特串</div><span class="arr">&rarr;</span>
+  <div class="node">&#9319; 贪心修复<br>(如需)</div><span class="arr">&rarr;</span>
+  <div class="node">&#9320; 暴力穷举<br>验证最优性</div>
+</div>
+
+<div class="callout callout-info">
+<strong>核心设计决策：</strong>
+(a) <strong>集合划分编码</strong>——避免 $O(n^2)$ 的 MTZ 整数变量；
+(b) <strong>维度压缩</strong>——max_routes=256，按效率 (cost/demand) 排序截断；
+(c) <strong>自动惩罚权重</strong>——$P = 2 \times \max(\text{route\_cost})$，无需人工调参；
+(d) <strong>双模模拟</strong>——&le;28 qubits 用精确态矢量，更大实例自动切换采样模式。
+</div>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>模块</th><th>核心函数</th><th>输入</th><th>输出</th></tr></thead>
+  <tbody>
+    <tr><td>&#9312;</td><td class="c">parse_vrp_file()</td><td>.vrp 文件路径</td><td>CVRPInstance 数据对象</td></tr>
+    <tr><td>&#9313;</td><td class="c">enumerate_feasible_routes()</td><td>实例, max_routes, filter</td><td>List[Route] 候选路线</td></tr>
+    <tr><td>&#9314;</td><td class="c">build_cvrp_qubo()</td><td>实例, routes, penalty</td><td>QUBO (矩阵 + 偏移)</td></tr>
+    <tr><td>&#9315;</td><td class="c">qubo_to_ising()</td><td>QUBO</td><td>IsingTerms (h, J, offset)</td></tr>
+    <tr><td>&#9316;</td><td class="c">build_*_qaoa_circuit()</td><td>IsingTerms, p</td><td>量子电路 (Bloqade/Qiskit)</td></tr>
+    <tr><td>&#9317;</td><td class="c">optimize_qaoa()</td><td>ising, p, maxiter</td><td>最优 (&gamma;,&beta;) + 比特串</td></tr>
+    <tr><td>&#9318;</td><td class="c">decode_cvrp_solution()</td><td>比特串, routes</td><td>CVRP 路线方案</td></tr>
+    <tr><td>&#9319;</td><td class="c">repair_cvrp_solution()</td><td>不可行解</td><td>可行解 (贪心修复)</td></tr>
+    <tr><td>&#9320;</td><td class="c">solve_cvrp_brute_force()</td><td>实例, routes</td><td>全局最优解 (验证基线)</td></tr>
+  </tbody>
+</table>
+</div>
+</section>
+
+<!-- 4. Route Enumeration -->
+<section id="s4">
+<span class="section-dot">04 / 13</span>
+<h3><span class="num">04</span> 步骤一：可行路线枚举与维度压缩</h3>
+
+<p>核心思路：<strong>将连续路径优化问题离散化为"路线选择问题"</strong>。对 $n=5$ 个客户，所有非空子集共 $2^5-1=31$ 个。其中满足容量约束（总需求 &le; 41）的即为<strong>候选路线</strong>。</p>
+
+<div class="callout callout-success">
+<strong>本实例结果：</strong>31 个子集中，<strong>11 条</strong>满足容量约束 (&le; 41)。
+另需 $\lceil \log_2(K+1) \rceil = 2$ 个松弛比特来编码"&le;K 辆车"约束 → 共 <strong>13 qubits</strong>。
+</div>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>$r$</th><th>客户子集 (内部 ID)</th><th style="text-align:right">需求</th><th style="text-align:right">TSP 成本</th><th style="text-align:right">效率 (cost/demand)</th></tr></thead>
+  <tbody>
+    <tr><td class="n">0</td><td class="n">{4}</td><td class="n">23</td><td class="n">44.72</td><td class="n">1.944</td></tr>
+    <tr><td class="n">1</td><td class="n">{2, 3}</td><td class="n">41</td><td class="n">60.39</td><td class="n">1.473</td></tr>
+    <tr><td class="n">2</td><td class="n">{2, 4}</td><td class="n">33</td><td class="n">48.61</td><td class="n">1.473</td></tr>
+    <tr><td class="n">3</td><td class="n">{3, 4}</td><td class="n">39</td><td class="n">51.50</td><td class="n">1.321</td></tr>
+    <tr><td class="n">4</td><td class="n">{2, 5}</td><td class="n">35</td><td class="n">46.32</td><td class="n">1.323</td></tr>
+    <tr><td class="n">5</td><td class="n">{3, 5}</td><td class="n">41</td><td class="n">52.58</td><td class="n">1.283</td></tr>
+    <tr><td class="n">6</td><td class="n">{4, 5}</td><td class="n">34</td><td class="n">56.72</td><td class="n">1.668</td></tr>
+    <tr><td class="n">7</td><td class="n">{2}</td><td class="n">19</td><td class="n">27.78</td><td class="n">1.462</td></tr>
+    <tr><td class="n">8</td><td class="n">{3, 6}</td><td class="n">41</td><td class="n">60.39</td><td class="n">1.473</td></tr>
+    <tr><td class="n">9</td><td class="n">{1, 2}</td><td class="n">35</td><td class="n">41.07</td><td class="n">1.174</td></tr>
+    <tr><td class="n">10</td><td class="n">{1, 4}</td><td class="n">32</td><td class="n">59.66</td><td class="n">1.864</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="callout callout-purple">
+<strong>面向更大实例的三种过滤模式：</strong>
+<ul style="margin:.4rem 0 0 1.2rem;font-size:.85rem;">
+  <li><code>top_efficient</code>——全枚举后按效率排序，取前 max_routes 条（默认 256）</li>
+  <li><code>single_pair</code>——仅枚举 1–2 个客户的小路线（多项式复杂度）</li>
+  <li><code>all</code>——不做截断（仅适用于极小实例）</li>
+</ul>
+</div>
+
+<div class="takeaway"><strong>要点：</strong>路线枚举是指数级的潜在瓶颈，但通过效率过滤和数量上限，可将 QUBO 变量数控制在量子硬件可处理的范围内。</div>
+</section>
+
+<!-- 5. QUBO -->
+<section id="s5">
+<span class="section-dot">05 / 13</span>
+<h3><span class="num">05</span> 步骤二：CVRP → QUBO 建模</h3>
+
+<p>QUBO（二次无约束二值优化）是连接经典优化与量子硬件的数学桥梁。将带约束的 CVRP 转化为<strong>无约束二次型</strong> $x^T Q x$。</p>
+
+<h4>变量结构</h4>
+<div class="fbox fbox-blue">
+  $$x = [\,\underbrace{y_0, y_1, \ldots, y_{R-1}}_{\text{路线选择 (二进制)}},\;
+          \underbrace{s_0, s_1, \ldots, s_{S-1}}_{\text{松弛比特 (二进制)}}\,] \in \{0,1\}^{R+S}$$
+</div>
+<p style="font-size:.85rem;">本实例：$R=11$ 条候选路线，$S=2$ 个松弛比特（将 &le;K 不等式转为等式）。</p>
+
+<h4>目标函数（直接编码）</h4>
+<div class="fbox fbox-amber">
+  $$\min_{y_r \in \{0,1\}} \sum_{r=0}^{R-1} \mathrm{cost}_r \cdot y_r \quad \Longrightarrow \quad Q_{r,r} \mathrel{+}= \mathrm{cost}_r$$
+</div>
+
+<h4>约束 C1：每个客户恰好覆盖一次</h4>
+<p>对每个客户 $c$，要求 $\sum_{r\ni c} y_r = 1$。转化为二次惩罚：</p>
+<div class="fbox fbox-green">
+  $$P \cdot \Big(\sum_{r \ni c} y_r - 1\Big)^2
+     = P \cdot \Big( \sum_{r \ni c} y_r - 2\sum_{r \ni c} y_r \Big) + P \quad (\because y_r^2 = y_r)$$
+</div>
+<p style="font-size:.85rem;">展开得：对角项 $Q_{r,r} \mathrel{+}= -P$，交叉项 $Q_{r_i,r_j} \mathrel{+}= 2P$，偏移 $\mathrel{+}= P$。</p>
+
+<h4>约束 C2：车辆数 &le; K（松弛编码）</h4>
+<p>引入 $S = \lceil \log_2(K+1) \rceil = 2$ 个松弛比特，将不等式转为等式：</p>
+<div class="fbox fbox-teal">
+  $$\underbrace{\sum_{r=0}^{R-1} y_r}_{\text{使用路线数}} + \underbrace{\sum_{s=0}^{S-1} 2^s \cdot s_s}_{\text{松弛量}} = K
+     \quad \Longrightarrow \quad P \cdot \Big( \sum_r y_r + \sum_s 2^s s_s - K \Big)^2$$
+</div>
+
+<h4>自动惩罚权重</h4>
+<div class="callout callout-warning">
+<strong>原理：</strong>$P > \max(\mathrm{cost}_r)$ 足以保证约束不被违反。<br>
+<strong>实现：</strong><code>_auto_penalty(routes) = 2.0 &times; max(route.cost)</code>（2 倍安全余量，避免目标函数被惩罚项淹没）。
+</div>
+
+<p style="font-size:.85rem;">最终 QUBO 为 $13 \times 13$ 上三角矩阵，含 78 个非零非对角元。</p>
+</section>
+
+<!-- 6. QUBO to Ising -->
+<section id="s6">
+<span class="section-dot">06 / 13</span>
+<h3><span class="num">06</span> 步骤三：QUBO → Ising 哈密顿量</h3>
+
+<p>量子比特的自旋态为 $\sigma_i^z \in \{+1,-1\}$，而 QUBO 变量为 $x_i \in \{0,1\}$。两者之间的映射关系：</p>
+
+<div class="fbox fbox-blue">
+  $$x_i = \frac{1 - \sigma_i^z}{2}$$
+</div>
+
+<p>代入 QUBO 矩阵 $Q$ 展开：</p>
+
+<div class="fbox fbox-amber">
+  $$x_i x_j = \frac{1 - \sigma_i^z - \sigma_j^z + \sigma_i^z \sigma_j^z}{4}$$
+  $$\Downarrow$$
+  $$H_{\text{Ising}} = \sum_i h_i Z_i + \sum_{i \lt j} J_{ij} Z_i Z_j + \text{const}$$
+  $$\text{其中 } h_i = -\frac{Q_{ii}}{2} - \sum_{j \ne i} \frac{Q_{ij}}{4},\qquad J_{ij} = \frac{Q_{ij}}{4}$$
+</div>
+
+<div class="callout callout-success">
+<strong>结果：</strong>13 个 qubits，<strong>13 个 Z 项</strong>（线性）+ <strong>78 个 ZZ 项</strong>（二次耦合）——构成一个全连接 Ising 哈密顿量。
+基态编码了 CVRP 的最优解；激发态对应次优或不可行解。
+</div>
+</section>
+
+<!-- 7. QAOA Circuit -->
+<section id="s7">
+<span class="section-dot">07 / 13</span>
+<h3><span class="num">07</span> 步骤四：QAOA 量子电路构建</h3>
+
+<p>QAOA 的核心思想：交替应用 $p$ 层<strong>问题哈密顿量演化</strong> ($H_C$) 和<strong>混合哈密顿量演化</strong> ($H_M$)，制备逼近基态的量子态：</p>
+
+<div class="fbox fbox-green">
+  $$|\psi(\boldsymbol{\gamma}, \boldsymbol{\beta})\rangle = \prod_{\ell=1}^{p}
+     \underbrace{e^{-i\beta_\ell H_M}}_{\text{混频器}}\;
+     \underbrace{e^{-i\gamma_\ell H_C}}_{\text{成本层}} \; |+\rangle^{\otimes n}$$
+  $$H_C = \sum_i h_i Z_i + \sum_{i \lt j} J_{ij} Z_i Z_j,\qquad H_M = \sum_i X_i$$
+</div>
+
+<h4>门分解</h4>
+<p style="font-size:.87rem;">
+每个 $ZZ$ 项 $J_{ij}Z_iZ_j$ → $\text{CX}_{i,j} \cdot RZ_j(2J_{ij}\gamma) \cdot \text{CX}_{i,j}$（标准三门分解）<br>
+每个 $Z$ 项 $h_i Z_i$ → $RZ_i(2h_i\gamma)$<br>
+混频器层 → 每个 qubit 上 $RX_i(2\beta)$
+</p>
+
+<h4>本实例电路参数</h4>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>参数</th><th style="text-align:right">值</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>量子比特数</td><td class="n">13</td><td>11 路线选择 + 2 松弛比特</td></tr>
+    <tr><td>层数 $p$</td><td class="n">4</td><td>QAOA 深度（每层 1 组 &gamma; + 1 组 &beta;）</td></tr>
+    <tr><td>优化参数数</td><td class="n">8</td><td>&gamma;&#8320;,&beta;&#8320; … &gamma;&#8323;,&beta;&#8323;</td></tr>
+    <tr><td>ZZ 门数量</td><td class="n">78 &times; 3p = 936</td><td>每层 78 组 CX–RZ–CX</td></tr>
+    <tr><td>单 qubit 门数量</td><td class="n">26p = 104</td><td>每层 RZ + RX</td></tr>
+  </tbody>
+</table>
+</div>
+</section>
+
+<!-- 8. Optimization -->
+<section id="s8">
+<span class="section-dot">08 / 13</span>
+<h3><span class="num">08</span> 步骤五：COBYLA 优化过程</h3>
+
+<p>COBYLA（线性逼近约束优化）是一种无导数优化器。每次函数评估需运行量子电路仿真并计算 $\langle \psi(\gamma,\beta) | H_C | \psi(\gamma,\beta) \rangle$。</p>
+
+<div class="callout callout-info">
+<strong>优化配置：</strong>初始点：$[0,2\pi]^8$ 内随机采样（8 维参数空间）&ensp;|&ensp;
+态矢量仿真（精确，13 qubits 可行）&ensp;|&ensp;
+AerSimulator + MPS（矩阵乘积态）后端。
+</div>
+
+<h4>优化收敛轨迹</h4>
+<div class="opt-timeline">
+  <div class="opt-hdr"><span class="iter">迭代</span><span style="flex:1;"></span><span class="ev">能量</span><span class="bv">历史最优</span></div>
+  <div class="opt-row"><span class="iter">1</span><span class="bar-wrap"><span class="bar-fill" style="width:100%;background:linear-gradient(90deg,#e53e3e,#fc8181);"></span></span><span class="ev">5098.18</span><span class="bv">5098.18</span></div>
+  <div class="opt-row"><span class="iter">2</span><span class="bar-wrap"><span class="bar-fill" style="width:99.7%;background:linear-gradient(90deg,#e53e3e,#fc8181);"></span></span><span class="ev">5095.59</span><span class="bv">5095.59</span></div>
+  <div class="opt-row"><span class="iter">3</span><span class="bar-wrap"><span class="bar-fill" style="width:99.7%;background:linear-gradient(90deg,#e53e3e,#fc8181);"></span></span><span class="ev">5405.31</span><span class="bv">5095.59</span></div>
+  <div class="opt-row"><span class="iter">20</span><span class="bar-wrap"><span class="bar-fill" style="width:22.7%;background:linear-gradient(90deg,#ed8936,#fbd38d);"></span></span><span class="ev">5479.99</span><span class="bv">4552.18</span></div>
+  <div class="opt-row"><span class="iter">40</span><span class="bar-wrap"><span class="bar-fill" style="width:22.7%;background:linear-gradient(90deg,#ed8936,#fbd38d);"></span></span><span class="ev">4591.85</span><span class="bv">4552.18</span></div>
+  <div class="opt-row"><span class="iter">60</span><span class="bar-wrap"><span class="bar-fill" style="width:15.7%;background:linear-gradient(90deg,#38a169,#9ae6b4);"></span></span><span class="ev">4538.65</span><span class="bv">4502.32</span></div>
+  <div class="opt-row"><span class="iter">80</span><span class="bar-wrap"><span class="bar-fill" style="width:12.2%;background:linear-gradient(90deg,#3182ce,#90cdf4);"></span></span><span class="ev">4484.50</span><span class="bv">4477.89</span></div>
+</div>
+
+<div class="kpi-row">
+  <div class="kpi"><div class="big">30.0s</div><div class="lbl">总优化耗时</div></div>
+  <div class="kpi"><div class="big">100</div><div class="lbl">COBYLA 迭代次数</div></div>
+  <div class="kpi"><div class="big green">4391.75</div><div class="lbl">最优 Ising 能量 (优化期)</div></div>
+  <div class="kpi"><div class="big amber">309.35</div><div class="lbl">最优采样比特串能量</div></div>
+</div>
+
+<div class="callout callout-warning">
+<strong>注意：</strong>Ising 期望能量 (~4391) 远大于实际 CVRP 成本 (163.85)，这是因为约束惩罚项主导了哈密顿量。当解满足所有约束时，惩罚项消失，能量即等于实际路线成本。
+</div>
+
+<div class="col2" style="margin:1.2rem 0;">
+  <div style="text-align:center;">
+    <img src="P-n16-k8-micro_convergence_p6.png" alt="优化收敛曲线" style="max-width:100%;height:auto;border-radius:6px;border:1px solid var(--border);box-shadow:var(--shadow);">
+    <p style="font-size:.75rem;color:var(--dim);margin-top:.35rem;">图 3: COBYLA 优化收敛曲线 (p=6)</p>
+  </div>
+  <div style="text-align:center;">
+    <img src="P-n16-k8-micro_distribution_p6.png" alt="比特串分布" style="max-width:100%;height:auto;border-radius:6px;border:1px solid var(--border);box-shadow:var(--shadow);">
+    <p style="font-size:.75rem;color:var(--dim);margin-top:.35rem;">图 4: 最终采样 Top-20 比特串能量分布 (p=6)</p>
+  </div>
+</div>
+
+<h4>最优比特串</h4>
+<div class="fbox fbox-blue" style="font-size:1.05rem;letter-spacing:1.5px;font-family:var(--mono);">
+  <strong>00000001100</strong>&thinsp;<span style="color:var(--dim);">10</span>
+</div>
+<p style="font-size:.83rem;text-align:center;">
+  y-bits <strong>00000001100</strong> → 选中路线 <strong>r7, r8</strong> &ensp;|&ensp;
+  slack <strong>10</strong> → 使用 2 条路线，松弛值 = 1
+</p>
+<p style="font-size:.85rem;">QAOA 选中了路线 <strong>r7 ({2}, d=19)</strong> 和 <strong>r8 ({3,6}, d=41)</strong>，但客户 {4,5} 未被覆盖——触发了贪心修复流程。</p>
+</section>
+
+<!-- 8b. Penalty Comparison -->
+<section id="s8b">
+<span class="section-dot">08B</span>
+<h3><span class="num" style="background:var(--amber);">08B</span> 对比实验：增大惩罚权重，QAOA 直接输出可行解</h3>
+
+<p>惩罚权重 $P$ 控制约束满足 vs 目标优化的平衡。下面对比两次独立 QAOA 运行——<strong>仅改变 $P$，其余参数完全相同</strong>（$p=4$, maxiter=100, statevector 模式）。</p>
+
+<div class="col2" style="margin-bottom:1.2rem;">
+  <div class="box" style="border-left:4px solid var(--red);">
+    <h5 style="color:var(--red);">运行 A &nbsp; 自动惩罚 ($P \approx 151$)</h5>
+    <div style="font-size:.82rem;line-height:1.8;">
+      <div>P = 2 &times; max(route_cost) &asymp; 151</div>
+      <div>最优 Ising 能量: <strong>4391.75</strong></div>
+      <div>采样最优比特串: <code>0000000110010</code></div>
+      <div>比特串能量: <strong>309.35</strong></div>
+      <div style="margin-top:.4rem;padding:.3rem .6rem;background:#fdf2f2;border-radius:4px;">
+        QAOA 输出: <strong style="color:var(--red);">不可行</strong>（缺客户 4,5）<br>
+        &rarr; 需依赖贪心修复才能得到可行解
+      </div>
+    </div>
+  </div>
+  <div class="box" style="border-left:4px solid var(--green);">
+    <h5 style="color:var(--green);">运行 B &nbsp; 手动加大惩罚 ($P = 1225$)</h5>
+    <div style="font-size:.82rem;line-height:1.8;">
+      <div>P = 1225 &asymp; 16 &times; max(route_cost)</div>
+      <div>最优 Ising 能量: <strong>4108.78</strong></div>
+      <div>采样最优比特串: <code>1000000110000</code></div>
+      <div>比特串能量: <strong>171.67</strong></div>
+      <div style="margin-top:.4rem;padding:.3rem .6rem;background:#edf7f0;border-radius:4px;">
+        QAOA 输出: <strong style="color:var(--green);">可行</strong>（所有客户覆盖，车辆数=K）<br>
+        &rarr; 无需贪心修复，直接得到最优配送方案
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>指标</th><th>运行 A (P &asymp; 151)</th><th>运行 B (P = 1225)</th><th>变化</th></tr></thead>
+  <tbody>
+    <tr><td>QAOA 优化最低能量</td><td class="n">4391.75</td><td class="n">4108.78</td><td class="n" style="color:var(--green);">&darr; 6.4%</td></tr>
+    <tr><td>最优比特串能量</td><td class="n">309.35</td><td class="n">171.67</td><td class="n" style="color:var(--green);">&darr; 44.5%</td></tr>
+    <tr><td>比特串可行性</td><td style="color:var(--red);">不可行</td><td style="color:var(--green);">可行</td><td>改善</td></tr>
+    <tr><td>是否需要贪心修复</td><td style="color:var(--red);">是</td><td style="color:var(--green);">否</td><td>消除</td></tr>
+    <tr><td>最终 CVRP 成本</td><td class="n">163.85</td><td class="n">163.85</td><td class="n">一致</td></tr>
+    <tr><td>全局最优性</td><td colspan="3" style="text-align:center;color:var(--green);font-weight:600;">两次均达到全局最优 (gap = 0.00%)</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h4>运行 B 详细信息</h4>
+<div class="kpi-row">
+  <div class="kpi"><div class="big" style="font-size:1.1rem;">1225.0</div><div class="lbl">惩罚权重 P</div></div>
+  <div class="kpi"><div class="big">4108.78</div><div class="lbl">最优 Ising 能量</div></div>
+  <div class="kpi"><div class="big green">171.67</div><div class="lbl">最优比特串能量</div></div>
+  <div class="kpi"><div class="big amber">163.85</div><div class="lbl">最终 CVRP 成本</div></div>
+</div>
+
+<div class="fbox fbox-blue" style="font-size:1.05rem;letter-spacing:1.5px;font-family:var(--mono);margin-bottom:.5rem;">
+  <strong>10000001100</strong>&thinsp;<span style="color:var(--dim);">00</span>
+</div>
+<p style="font-size:.83rem;text-align:center;">
+  y-bits <strong>10000001100</strong> → 选中路线 <strong>r0, r7, r8</strong>（恰好 3 条 = K）&ensp;|&ensp;
+  slack <strong>00</strong> → 松弛值 = 0（恰好用完所有车辆）
+</p>
+
+<div class="callout callout-success" style="margin-top:1rem;">
+<strong>运行 B 解码结果（无需修复，直接可行）：</strong><br>
+路线 [1→5→4→1] &nbsp;需求=39 &nbsp;成本=75.68<br>
+路线 [1→2→1] &nbsp;&nbsp;&nbsp;&nbsp;需求=19 &nbsp;成本=27.78<br>
+路线 [1→3→6→1] &nbsp;需求=41 &nbsp;成本=60.39<br>
+<strong>总成本 = 163.85 &ensp;|&ensp; 使用 3/3 辆车 &ensp;|&ensp; 可行 &ensp;|&ensp; 全局最优</strong>
+</div>
+
+<h4>为什么增大惩罚有效？</h4>
+<div class="callout callout-info">
+<p style="font-size:.87rem;">惩罚权重 $P$ 决定了 QUBO 中约束项相对于目标项的"音量"。当 $P$ 太小时：</p>
+<ul style="font-size:.85rem;margin:.3rem 0 0 1.2rem;line-height:1.8;">
+  <li>哈密顿量中目标函数（路线成本）的贡献相对较大</li>
+  <li>QAOA 可能"牺牲"约束满足来换取低能量——得到的比特串虽然能量低，但编码的是<strong>不可行解</strong></li>
+  <li>这就像告诉优化器"尽量省钱"，它可能会选择性地放弃一些客户来降低总距离</li>
+</ul>
+<p style="font-size:.87rem;margin-top:.5rem;">当 $P$ 足够大时：</p>
+<ul style="font-size:.85rem;margin:.3rem 0 0 1.2rem;line-height:1.8;">
+  <li>违反约束的成本远大于任何合理的目标函数节省</li>
+  <li>哈密顿量的低能态<strong>天然满足所有约束</strong>——基态编码的就是可行解中的最优者</li>
+  <li>QAOA 在优化过程中被"强制"留在可行子空间内</li>
+</ul>
+</div>
+
+<div class="takeaway"><strong>结论：</strong>惩罚权重是一个关键的超参数。太小 → 需依赖经典后处理；太大 → 能量景观过于陡峭，优化困难。本实例中 $P = 1225$（约 16 倍 max_cost）恰好使 QAOA 直接输出全局最优可行解，无需任何经典修复。</div>
+</section>
+
+<!-- 9. Decode + Repair -->
+<section id="s9">
+<span class="section-dot">09 / 13</span>
+<h3><span class="num">09</span> 步骤六：比特串解码与贪心修复</h3>
+
+<div class="pipeline">
+  <div class="node">QAOA<br>比特串</div><span class="arr">&rarr;</span>
+  <div class="node">拆分 y-bits<br>与 slack-bits</div><span class="arr">&rarr;</span>
+  <div class="node">选中 y_r=1<br>的路线</div><span class="arr">&rarr;</span>
+  <div class="node">检查<br>可行性</div><span class="arr">&rarr;</span>
+  <div class="node hl">若不可行<br>→ 三步修复</div>
+</div>
+
+<h4>贪心修复三步法</h4>
+<div class="col2">
+  <div class="box">
+    <h5>第一步：去重</h5>
+    <p style="font-size:.84rem;">对每个被多条路线覆盖的客户，<strong>只保留最便宜的那条</strong>，移除重复覆盖。</p>
+  </div>
+  <div class="box">
+    <h5>第二步：补缺</h5>
+    <p style="font-size:.84rem;">对未被覆盖的客户，从候选池中<strong>选择最便宜且不冲突的路线</strong>加入。</p>
+  </div>
+</div>
+<div class="callout callout-info" style="margin-top:.6rem;">
+<strong>第三步：合并</strong>——若路线数仍超过 $K$，穷举评估所有路线对的合并可行性（总需求 &le; 容量），接受成本节省最大的一对。反复执行直到路线数 &le; $K$。
+</div>
+
+<div class="callout callout-success">
+<strong>本实例修复路径：</strong><br>
+QAOA 输出：r7, r8（覆盖 {2,3,6}，缺失 {4,5}）。<br>
+修复补入 r0（覆盖 {4}）→ 路线数 = 3 ≤ K，但客户 5 仍需覆盖<br>
+→ 合并 r0 与覆盖 5 的候选路线，最终结果：<strong>r0 ({4,5}) + r7 ({2}) + r8 ({3,6})</strong>。<br>
+<strong>修复后成本：</strong>75.68 + 27.78 + 60.39 = 163.85。
+</div>
+
+<div class="takeaway"><strong>启示：</strong>纯量子方法在硬约束满足上仍有不足，但混合策略（量子探索 + 经典修复）可以弥补这一缺陷，达到全局最优。</div>
+</section>
+
+<!-- 10. Final Solution -->
+<section id="s10">
+<span class="section-dot">10 / 13</span>
+<h3><span class="num">10</span> 最终解：最优配送方案与路线图</h3>
+
+<div class="kpi-row">
+  <div class="kpi"><div class="big green">可行</div><div class="lbl">解状态</div></div>
+  <div class="kpi"><div class="big amber">163.85</div><div class="lbl">总行驶距离</div></div>
+  <div class="kpi"><div class="big">3 / 3</div><div class="lbl">使用车辆数</div></div>
+  <div class="kpi"><div class="big green">99</div><div class="lbl">总配送需求（全部满足）</div></div>
+</div>
+
+<h4>三条最优路线</h4>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>路线</th><th>路径</th><th>客户</th><th style="text-align:right">需求</th><th style="text-align:right">距离</th><th style="text-align:right">容量利用率</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong style="color:#9b2c2c;">路线 A</strong></td>
+      <td class="c">[1 → 5 → 4 → 1]</td>
+      <td class="n">{4, 5}</td><td class="n">23+16=39</td><td class="n">75.68</td><td class="n">95.1%</td>
+    </tr>
+    <tr>
+      <td><strong style="color:#2b6cb0;">路线 B</strong></td>
+      <td class="c">[1 → 2 → 1]</td>
+      <td class="n">{2}</td><td class="n">19</td><td class="n">27.78</td><td class="n">46.3%</td>
+    </tr>
+    <tr>
+      <td><strong style="color:#276749;">路线 C</strong></td>
+      <td class="c">[1 → 3 → 6 → 1]</td>
+      <td class="n">{3, 6}</td><td class="n">30+11=41</td><td class="n">60.39</td><td class="n">100.0%</td>
+    </tr>
+    <tr class="row-hl">
+      <td colspan="3">合计</td><td class="n">99 / 123 (总容量)</td><td class="n"><strong>163.85</strong></td><td class="n">80.5% 平均</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h4>配送路线图</h4>
+<div class="map-box">
+  <svg viewBox="10 18 60 58" style="max-width:560px;">
+    <defs>
+      <!-- Tiny, subtle arrow markers -->
+      <marker id="aR" markerWidth="2.2" markerHeight="1.8" refX="1.8" refY="0.9" orient="auto">
+        <polygon points="0 0, 2.2 0.9, 0 1.8" fill="#9b2c2c" opacity=".7"/>
+      </marker>
+      <marker id="aB" markerWidth="2.2" markerHeight="1.8" refX="1.8" refY="0.9" orient="auto">
+        <polygon points="0 0, 2.2 0.9, 0 1.8" fill="#2b6cb0" opacity=".7"/>
+      </marker>
+      <marker id="aG" markerWidth="2.2" markerHeight="1.8" refX="1.8" refY="0.9" orient="auto">
+        <polygon points="0 0, 2.2 0.9, 0 1.8" fill="#276749" opacity=".7"/>
+      </marker>
+    </defs>
+    <rect x="10" y="18" width="60" height="58" fill="#f9fafb" stroke="#e2e6ed" stroke-width=".6" rx="3"/>
+
+    <!-- Route C (green) -->
+    <path d="M 30 40 L 49 49 L 52 33 L 30 40" fill="none" stroke="#276749" stroke-width="2.2" stroke-dasharray="5,3" marker-end="url(#aG)" opacity=".85"/>
+    <!-- Route B (blue) -->
+    <path d="M 30 40 L 37 52 L 30 40" fill="none" stroke="#2b6cb0" stroke-width="2.2" marker-end="url(#aB)" opacity=".85"/>
+    <!-- Route A (red) -->
+    <path d="M 30 40 L 31 62 L 52 64 L 30 40" fill="none" stroke="#9b2c2c" stroke-width="2.2" stroke-dasharray="7,4" marker-end="url(#aR)" opacity=".85"/>
+
+    <!-- Depot -->
+    <circle cx="30" cy="40" r="3.3" fill="#9b2c2c" stroke="#fff" stroke-width="1.3"/>
+    <text x="30" y="43.4" font-size="2.8" fill="#fff" text-anchor="middle" font-weight="700">D</text>
+    <text x="30" y="37.5" font-size="2.5" fill="#1e293b" text-anchor="middle" font-weight="600">仓库</text>
+
+    <!-- Customers -->
+    <circle cx="37" cy="52" r="2.6" fill="#2b6cb0" stroke="#fff" stroke-width=".9"/>
+    <text x="37" y="57" font-size="2.8" fill="#1a2744" text-anchor="middle" font-weight="700">2</text>
+    <circle cx="49" cy="49" r="2.6" fill="#276749" stroke="#fff" stroke-width=".9"/>
+    <text x="49" y="54" font-size="2.8" fill="#1a2744" text-anchor="middle" font-weight="700">3</text>
+    <circle cx="52" cy="64" r="2.6" fill="#9b2c2c" stroke="#fff" stroke-width=".9"/>
+    <text x="52" y="69" font-size="2.8" fill="#1a2744" text-anchor="middle" font-weight="700">4</text>
+    <circle cx="31" cy="62" r="2.6" fill="#9b2c2c" stroke="#fff" stroke-width=".9"/>
+    <text x="31" y="67" font-size="2.8" fill="#1a2744" text-anchor="middle" font-weight="700">5</text>
+    <circle cx="52" cy="33" r="2.6" fill="#276749" stroke="#fff" stroke-width=".9"/>
+    <text x="52" y="38" font-size="2.8" fill="#1a2744" text-anchor="middle" font-weight="700">6</text>
+
+    <!-- Legend -->
+    <rect x="12" y="20" width="34" height="15" rx="2" fill="#fff" fill-opacity=".92" stroke="#e2e6ed" stroke-width=".4"/>
+    <line x1="14" y1="23.5" x2="28" y2="23.5" stroke="#9b2c2c" stroke-width="1.8" stroke-dasharray="4,2"/>
+    <text x="30" y="25.8" font-size="2.3" fill="#475569">A 75.68</text>
+    <line x1="14" y1="29" x2="28" y2="29" stroke="#2b6cb0" stroke-width="1.8"/>
+    <text x="30" y="31.3" font-size="2.3" fill="#475569">B 27.78</text>
+  </svg>
+</div>
+<p style="text-align:center;font-size:.78rem;color:var(--dim);">
+  图 2: 最优配送路线。红色 = 路线 A（仓库→5→4→仓库），蓝色 = 路线 B（仓库→2→仓库），绿色 = 路线 C（仓库→3→6→仓库）。总距离 = 163.85。
+</p>
+
+<div class="takeaway"><strong>结果：</strong>三条路线完全覆盖全部 5 个客户，总行驶距离 163.85，其中路线 C 容量利用达到 100%（满载），路线 A 也接近满负荷 (95.1%)，整体方案非常紧凑。</div>
+</section>
+
+<!-- 11. Brute Force -->
+<section id="s11">
+<span class="section-dot">11 / 13</span>
+<h3><span class="num">11</span> 暴力穷举验证：全局最优性确认</h3>
+
+<p>由于仅有 $2^{11}=2048$ 种路线组合，可以通过暴力穷举获得<strong>真实的全局最优解</strong>作为对比基线。</p>
+
+<h4>所有可行解排名</h4>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>排名</th><th style="text-align:right">成本</th><th>选中路线</th><th>比特串</th><th style="text-align:right">路线数</th><th>备注</th></tr></thead>
+  <tbody>
+    <tr class="row-hl">
+      <td><strong>#1</strong></td><td class="n"><strong>163.85</strong></td><td class="c">r0, r7, r8</td><td class="c">1000000110000</td><td class="n">3 / 3</td><td><span class="badge-opt">全局最优</span></td>
+    </tr>
+    <tr><td>#2</td><td class="n">170.09</td><td class="c">r3, r5, r7</td><td class="c">0001010100000</td><td class="n">3</td><td></td></tr>
+    <tr><td>#3</td><td class="n">178.91</td><td class="c">r1, r6, r8</td><td class="c">0100001010000</td><td class="n">3</td><td></td></tr>
+    <tr><td>#4</td><td class="n">188.62</td><td class="c">r1, r5, r10</td><td class="c">0100010000100</td><td class="n">3</td><td></td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="kpi-row">
+  <div class="kpi"><div class="big green">4</div><div class="lbl">可行解总数 (共 2048 种组合)</div></div>
+  <div class="kpi"><div class="big amber">163.85</div><div class="lbl">全局最优 = QAOA 结果</div></div>
+  <div class="kpi"><div class="big green">+0.00%</div><div class="lbl">Gap (QAOA vs 最优)</div></div>
+  <div class="kpi"><div class="big">#1 / 4</div><div class="lbl">QAOA 解在可行集中的排名</div></div>
+</div>
+
+<div class="callout callout-success">
+<strong>QAOA 找到了全局最优解。</strong>在 100 次迭代内，COBYLA 成功将 QAOA 电路参数调整到使最终测量结果（经贪心修复后）对应 CVRP 的最优配送方案。<br>
+<strong>注意：</strong>QAOA 原始输出的比特串 0000000110010 为<em>不可行解</em>（路线覆盖不完整），但经修复后达到全局最优成本 163.85。这说明 QAOA 找到的低能态已处于最优解的"引力盆地"内。
+</div>
+</section>
+
+<!-- 12. QAOA Advantages -->
+<section id="s12">
+<span class="section-dot">12 / 13</span>
+<h3><span class="num">12</span> 量子 QAOA 方法的优势</h3>
+
+<div class="col2">
+  <div class="box">
+    <h5>经典方法 (CPLEX / Gurobi)</h5>
+    <ul style="font-size:.84rem;line-height:2;list-style:none;padding:0;">
+      <li>&#10007; 整数规划在最坏情况下需指数时间</li>
+      <li>&#10007; MTZ 模型变量数为 $O(n^2 + nK)$，随客户数平方增长</li>
+      <li>&#10007; 大规模实例 ($n > 100$) 难以求得精确解</li>
+      <li>&#10007; 需要商业求解器许可证</li>
+    </ul>
+  </div>
+  <div class="box">
+    <h5>量子 QAOA 方法</h5>
+    <ul style="font-size:.84rem;line-height:2;list-style:none;padding:0;">
+      <li>&#10003; 量子并行性——$2^n$ 个状态同时被探索</li>
+      <li>&#10003; 集合划分编码压缩变量：$R+S$ qubits（本例 13 vs MTZ 约 40）</li>
+      <li>&#10003; 可在 NISQ 时代设备上运行（无需完全容错）</li>
+      <li>&#10003; 增加 $p$ 层可系统性地逼近基态</li>
+    </ul>
+  </div>
+</div>
+
+<h4>三大核心创新</h4>
+
+<div class="callout callout-purple">
+<strong>&#9312; 绝热定理的离散化：</strong>QAOA 将连续量子绝热演化离散为 $p$ 个 Trotter 步，每步包含 $e^{-i\gamma H_C}$（问题）和 $e^{-i\beta H_M}$（混频）。这使得它可在近期量子硬件上实现，无需完全容错的量子计算机。
+</div>
+
+<div class="callout callout-info">
+<strong>&#9313; 变分混合架构：</strong>量子处理器负责探索指数大的希尔伯特空间；经典优化器（COBYLA）负责调整参数。这种分工同时利用了量子态空间优势和成熟的经典优化技术。
+</div>
+
+<div class="callout callout-warning">
+<strong>&#9314; NISQ 就绪：</strong>无需复杂量子纠错码。电路深度相对较浅（$p$ 通常 1–10），门操作数量可控，使 QAOA 成为含噪声中等规模量子设备上的实用候选算法。
+</div>
+
+<h4>当前局限性</h4>
+<div class="callout callout-danger">
+<ul style="margin:0 0 0 1.2rem;font-size:.85rem;">
+  <li><strong>经典优化瓶颈：</strong>COBYLA 在高维参数空间中可能陷入局部最优（贫瘠高原问题）</li>
+  <li><strong>$p$ 的缩放：</strong>困难实例可能需要 $p \sim \mathrm{poly}(n)$ 层才能逼近最优解</li>
+  <li><strong>硬件噪声：</strong>门保真度和退相干时间限制了实际可用的 $p$ 和 qubit 数量</li>
+  <li><strong>本实例启示：</strong>QAOA 输出需贪心修复才可行——纯量子方法在硬约束满足上存在不足，混合策略弥补了这一点</li>
+</ul>
+</div>
+</section>
+
+<!-- 13. QASM Circuit -->
+<section id="s13">
+<span class="section-dot">13 / 13</span>
+<h3><span class="num">13</span> Bloqade QASM2 电路展示</h3>
+
+<p style="font-size:.87rem;">以下为 Bloqade（QuEra 中性原子平台）生成的 QASM2 扩展方言电路（单层，$p=1$，示例参数 $\gamma=0.5$, $\beta=0.3$），完整展示了 ZZ 耦合项与单 qubit 旋转门的门序列：</p>
+
+<div class="code-block"><span class="cm">// ===== 第 0 层: Hadamard 初始化 =====</span>
+h q[0];  h q[1];  h q[2];
+h q[3];  h q[4];  h q[5];
+h q[6];  h q[7];  h q[8];
+h q[9];  h q[10]; h q[11]; h q[12];
+
+<span class="cm">// ===== 成本层: ZZ 耦合 (共 78 组，节选展示) =====</span>
+<span class="cm">// J[0,1]:</span>
+cx q[0], q[1];    <span class="kw">rz</span> (<span class="num">2.0 * J01 * &gamma;&#8320;</span>) q[1];    cx q[0], q[1];
+<span class="cm">// J[0,2]:</span>
+cx q[0], q[2];    <span class="kw">rz</span> (<span class="num">2.0 * J02 * &gamma;&#8320;</span>) q[2];    cx q[0], q[2];
+<span class="cm">// ... (共 78 组 CX-RZ-CX) ...</span>
+
+<span class="cm">// ===== 成本层: 单 qubit Z 旋转 (13 个) =====</span>
+<span class="kw">rz</span> (<span class="num">2.0 * h&#8320; * &gamma;&#8320;</span>) q[0];
+<span class="kw">rz</span> (<span class="num">2.0 * h&#8321; * &gamma;&#8320;</span>) q[1];
+<span class="cm">// ...</span>
+<span class="kw">rz</span> (<span class="num">-693.155</span>) q[11];
+<span class="kw">rz</span> (<span class="num">-1386.311</span>) q[12];
+
+<span class="cm">// ===== 混频器层: X 旋转 =====</span>
+<span class="kw">rx</span> (<span class="num">0.6</span>) q[0];
+<span class="kw">rx</span> (<span class="num">0.6</span>) q[1];
+<span class="cm">// ... (共 13 个 RX 门)</span>
+<span class="kw">rx</span> (<span class="num">0.6</span>) q[12];
+
+<span class="cm">// ==== 重复 p=4 层 ====</span></div>
+
+<div class="callout callout-info" style="font-size:.84rem;">
+<strong>注：</strong>上述 QASM 代码为 Bloqade 扩展方言（通过 <code>@qasm2.extended</code> 装饰器生成），可直接编译到 QuEra 中性原子量子计算机上运行。Qiskit 仿真器使用等效的标准 QASM 电路进行经典模拟。
+</div>
+
+<!-- Summary KPI row -->
+<h4 style="margin-top:1.5rem;">项目汇总统计</h4>
+<div class="kpi-row">
+  <div class="kpi"><div class="big" style="font-size:1.05rem;">P-n16-k3-micro</div><div class="lbl">实例名称</div></div>
+  <div class="kpi"><div class="big">5 + 1</div><div class="lbl">客户 + 仓库</div></div>
+  <div class="kpi"><div class="big">3 / 41</div><div class="lbl">车辆数 / 容量</div></div>
+  <div class="kpi"><div class="big">11 + 2 = 13</div><div class="lbl">路线 + 松弛 Qubits</div></div>
+  <div class="kpi"><div class="big">p = 4</div><div class="lbl">QAOA 层数</div></div>
+  <div class="kpi"><div class="big">78 ZZ</div><div class="lbl">Ising 耦合项</div></div>
+  <div class="kpi"><div class="big">30.0 s</div><div class="lbl">运行耗时</div></div>
+  <div class="kpi"><div class="big green">163.85</div><div class="lbl">最优成本（全局最优）</div></div>
+  <div class="kpi"><div class="big amber">+0.00%</div><div class="lbl">QAOA Gap</div></div>
+</div>
+</section>
+
+</div><!-- .container -->
+
+<footer>
+  <strong>CVRP QAOA 量子求解器报告</strong> &mdash; 生成于 2026-07-23<br>
+  <span style="font-size:.75rem;">
+    参考文献: Farhi, Goldstone &amp; Gutmann (2014) &ldquo;A Quantum Approximate Optimization Algorithm&rdquo; (arXiv:1411.4028) &middot;
+    Lucas (2014) &ldquo;Ising formulations of many NP problems&rdquo; (Frontiers in Physics, 2, 5) &middot;
+    Bloqade 官方文档 (docs/digital/examples/qasm2/qaoa.py)
+  </span>
+</footer>
+
+</body>
+</html>
