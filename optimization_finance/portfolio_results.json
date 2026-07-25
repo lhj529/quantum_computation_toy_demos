@@ -1,0 +1,53 @@
+{
+  "paper": "Portfolio Optimization with Binary Encoding and QAOA",
+  "configuration": {
+    "N_assets": 6,
+    "K_bits": 3,
+    "N_qubo_vars": 18,
+    "asset_classes": [
+      "EQ",
+      "FI",
+      "MM"
+    ],
+    "variance_target": 0.012
+  },
+  "results": {
+    "exact_enumeration": {
+      "weights": [
+        0.17142857142857143,
+        0.0,
+        0.2571428571428571,
+        0.07142857142857142,
+        0.5,
+        0.0
+      ],
+      "return": 0.081,
+      "variance": 0.0084534693877551
+    },
+    "simulated_annealing": {
+      "weights": [
+        0.17142857142857143,
+        0.0,
+        0.2571428571428571,
+        0.07142857142857142,
+        0.5,
+        0.0
+      ],
+      "return": 0.081,
+      "variance": 0.0084534693877551,
+      "sharpe": 0.5546929982799361,
+      "feasible": true
+    }
+  },
+  "gamma_sweep": {
+    "n_gammas": 7,
+    "n_feasible": 5
+  },
+  "qaoa": {
+    "N_assets": 6,
+    "K_bits": 3,
+    "ran": true,
+    "p_layers": 3,
+    "appx_ratio": 0.9718871793565483
+  }
+}

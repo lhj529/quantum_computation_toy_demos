@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>投资组合优化 — SA vs QAOA 对比报告</title>
+<script>
+MathJax = {
+  tex: {
+    inlineMath: [['$','$'], ['\\(','\\)']],
+    displayMath: [['$$','$$'], ['\\[','\\]']],
+    macros: {
+      R: '\\mathbb{R}', Z: '\\mathbb{Z}',
+      O: '\\mathcal{O}', H: '\\hat{H}',
+      ket: ['|#1\\rangle', 1],
+      bra: ['\\langle#1|', 1],
+      ev: ['\\langle#1\\rangle', 1],
+      argmin: ['\\mathop{\\mathrm{arg\\,min}}\\limits_{#1}', 1],
+      wt: '\\omega',   Sg: '\\Sigma',
+      ga: '\\gamma',   lb: '\\lambda_b',
+      RR: '\\mathbb{R}',
+    }
+  },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+<style>
+/* ===== Variables ===== */
+:root {
+  --navy:    #1a2744;
+  --navy2:   #243656;
+  --slate:   #4a5568;
+  --blue:    #2b6cb0;
+  --teal:    #0d7377;
+  --green:   #276749;
+  --amber:   #975a16;
+  --red:     #9b2c2c;
+  --bg:      #f5f6f8;
+  --card:    #ffffff;
+  --border:  #e2e6ed;
+  --text:    #2d3748;
+  --dim:     #718096;
+  --shadow:  0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.07);
+  --radius:  8px;
+  --font:    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --mono:    "SF Mono", "Cascadia Code", "JetBrains Mono", "Fira Code", "Consolas", monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg); color: var(--text);
+  font-family: var(--font); font-size: 15.5px; line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ===== Top Header Bar ===== */
+.header-bar {
+  background: linear-gradient(135deg, #141e30 0%, #1a2744 40%, #243656 100%);
+  color: #fff; padding: 2.8rem 2rem 2.4rem; text-align: center;
+}
+.header-bar h1 { font-size: 2rem; font-weight: 700; letter-spacing: 1px; margin-bottom: .5rem; }
+.header-bar h2 { font-size: 1rem; font-weight: 400; opacity: .78; margin-bottom: 1.5rem; }
+.header-bar .tags { display: flex; gap: .55rem; flex-wrap: wrap; justify-content: center; margin-bottom: 1.2rem; }
+.header-bar .tag {
+  font-size: .7rem; font-weight: 600; letter-spacing: .5px;
+  background: rgba(255,255,255,.12); padding: .28rem .8rem; border-radius: 4px;
+  border: 1px solid rgba(255,255,255,.15);
+}
+.header-bar .meta-line { font-size: .82rem; opacity: .65; line-height: 1.8; }
+
+/* ===== Executive Summary Bar ===== */
+.exec-bar {
+  background: #fff; border-bottom: 1px solid var(--border); box-shadow: var(--shadow);
+  padding: 1.1rem 1.5rem; margin-bottom: 1.8rem;
+}
+.exec-bar .inner { max-width: 1000px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 1.5rem; align-items: center; justify-content: center; }
+.exec-bar .stat { text-align: center; }
+.exec-bar .stat .n { font-size: 1.35rem; font-weight: 700; color: var(--navy); }
+.exec-bar .stat .n.g { color: var(--green); }
+.exec-bar .stat .n.a { color: var(--amber); }
+.exec-bar .stat .n.r { color: var(--red); }
+.exec-bar .stat .t { font-size: .7rem; color: var(--dim); text-transform: uppercase; letter-spacing: .3px; }
+.exec-bar .sep { width: 1px; height: 28px; background: var(--border); }
+
+/* ===== Container ===== */
+.container { max-width: 1000px; margin: 0 auto; padding: 0 1.5rem 2rem; }
+
+/* ===== TOC ===== */
+.toc {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 1.6rem 2rem; margin: 1.8rem auto; max-width: 1000px;
+}
+.toc h3 { font-size: .95rem; font-weight: 700; color: var(--navy); margin-bottom: .8rem; text-transform: uppercase; letter-spacing: .5px; }
+.toc ol { columns: 2; column-gap: 2rem; list-style: none; counter-reset: toc; }
+.toc ol li { counter-increment: toc; margin: .22rem 0; break-inside: avoid; font-size: .88rem; }
+.toc ol li::before { content: counter(toc, decimal-leading-zero); font-weight: 700; color: var(--blue); margin-right: .55rem; font-size: .78rem; }
+.toc ol li a { color: var(--slate); text-decoration: none; }
+.toc ol li a:hover { color: var(--blue); }
+@media (max-width: 640px) { .toc ol { columns: 1; } }
+
+/* ===== Section ===== */
+section {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 1.8rem 2rem; margin-bottom: 1.5rem; position: relative;
+}
+section::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: linear-gradient(90deg, var(--navy), var(--blue), transparent);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+section h3 {
+  font-size: 1.15rem; font-weight: 700; color: var(--navy);
+  padding-bottom: .55rem; margin-bottom: 1.1rem;
+  border-bottom: 1px solid #e8ecf2; display: flex; align-items: center; gap: .6rem;
+}
+section h3 .num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.65rem; height: 1.65rem; border-radius: 4px;
+  background: var(--navy); color: #fff; font-size: .78rem; font-weight: 700; flex-shrink: 0;
+}
+section h4 {
+  font-size: 1rem; font-weight: 700; color: var(--navy2);
+  margin: 1.3rem 0 .5rem; padding-left: .55rem; border-left: 3px solid var(--blue);
+}
+
+/* ===== Section page-dot ===== */
+.section-dot {
+  position: absolute; top: 1.1rem; right: 1.3rem;
+  font-size: .68rem; color: #cbd5e0; font-weight: 600; letter-spacing: 1px;
+}
+
+/* ===== Key takeaway ===== */
+.takeaway {
+  margin-top: 1.3rem; padding: .7rem 1rem; background: #f8fafb;
+  border: 1px dashed #dce3eb; border-radius: 6px; font-size: .84rem; color: var(--slate);
+}
+.takeaway strong { color: var(--navy); }
+
+/* ===== Callout Boxes ===== */
+.callout {
+  border-left: 3px solid; border-radius: 0 4px 4px 0;
+  padding: .8rem 1.1rem; margin: 1rem 0; font-size: .89rem; line-height: 1.6;
+}
+.callout-info    { background: #eef2f9; border-color: var(--blue);   }
+.callout-success { background: #edf7f0; border-color: var(--green);  }
+.callout-warning { background: #fef9ee; border-color: var(--amber);  }
+.callout-danger  { background: #fdf2f2; border-color: var(--red);    }
+.callout-purple  { background: #f3eef9; border-color: #6b46c1;      }
+
+/* ===== KPI Cards ===== */
+.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: .8rem; margin: 1rem 0; }
+.kpi {
+  background: var(--card); border: 1px solid var(--border); border-radius: 6px;
+  padding: .95rem 1rem; text-align: center;
+}
+.kpi .big { font-size: 1.45rem; font-weight: 700; color: var(--navy); line-height: 1.2; }
+.kpi .big.accent { color: var(--blue); }
+.kpi .big.green  { color: var(--green); }
+.kpi .big.amber  { color: var(--amber); }
+.kpi .big.red    { color: var(--red); }
+.kpi .lbl { font-size: .72rem; color: var(--dim); margin-top: .2rem; }
+
+/* ===== Tables ===== */
+.tbl-wrap { overflow-x: auto; margin: 1rem 0; }
+table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+thead th {
+  background: var(--navy); color: #fff; padding: .48rem .7rem;
+  text-align: left; font-weight: 600; font-size: .76rem; letter-spacing: .4px;
+}
+tbody td { padding: .42rem .7rem; border-bottom: 1px solid var(--border); }
+tbody tr:nth-child(even) { background: #f9fafb; }
+tbody tr:hover { background: #eef2f9; }
+td.n { text-align: right; font-family: var(--mono); font-size: .8rem; font-variant-numeric: tabular-nums; }
+td.c { font-family: var(--mono); font-size: .78rem; color: var(--blue); }
+tbody tr.row-hl { background: #e6f0e8; font-weight: 600; }
+td.best { background: #e6f0e8; font-weight: 700; }
+
+/* ===== Two Column ===== */
+.col2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; }
+@media (max-width: 640px) { .col2 { grid-template-columns: 1fr; } }
+.col2 .box { border: 1px solid var(--border); border-radius: 6px; padding: 1rem 1.2rem; }
+.col2 .box h5 { font-weight: 700; color: var(--navy2); margin-bottom: .5rem; font-size: .92rem; }
+
+/* ===== Flow Pipeline ===== */
+.pipeline { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: .35rem; margin: 1.2rem 0; font-size: .78rem; }
+.pipeline .node {
+  background: #fff; border: 1.5px solid #cbd5e0; border-radius: 6px;
+  padding: .5rem .85rem; font-weight: 600; color: var(--slate); text-align: center; white-space: nowrap;
+}
+.pipeline .node.hl { background: var(--navy); color: #fff; border-color: var(--navy); }
+.pipeline .arr { color: #a0aec0; font-weight: 700; font-size: .9rem; }
+
+/* ===== Formula Boxes ===== */
+.fbox {
+  border-radius: 6px; padding: 1rem 1.3rem; margin: .9rem 0;
+  text-align: center; font-size: .95rem; overflow-x: auto;
+  border: 1px solid #e2e8f0;
+}
+.fbox-blue   { background: #f0f5fd; }
+.fbox-green  { background: #f0f9f4; }
+.fbox-amber  { background: #fefbf0; }
+.fbox-teal   { background: #f0f9f8; }
+
+/* ===== Code Block ===== */
+.code-block {
+  background: #1e293b; color: #e2e8f0; border-radius: 6px;
+  padding: 1rem 1.3rem; margin: 1rem 0; overflow-x: auto;
+  font-family: var(--mono); font-size: .76rem; line-height: 1.75; white-space: pre;
+}
+.code-block .kw { color: #e6b87e; } .code-block .fn { color: #93c5fd; }
+.code-block .num{ color: #c4b5fd; } .code-block .cm { color: #64748b; font-style: italic; }
+
+/* ===== Opt Timeline ===== */
+.opt-timeline { margin: 1rem 0; }
+.opt-hdr, .opt-row { display: flex; align-items: center; gap: .6rem; padding: .28rem 0; font-size: .84rem; border-bottom: 1px solid #f1f3f6; }
+.opt-hdr { font-weight: 700; color: var(--slate); font-size: .76rem; letter-spacing: .3px; border-bottom: 2px solid #ddd; }
+.opt-hdr span { text-transform: uppercase; }
+.opt-row .iter { width: 3rem; font-weight: 600; color: var(--navy); text-align: right; }
+.opt-row .bar-wrap { flex: 1; height: 12px; background: #edf0f5; border-radius: 6px; overflow: hidden; }
+.opt-row .bar-fill { display: block; height: 100%; border-radius: 6px; transition: width .4s ease; }
+.opt-row .ev { width: 7rem; text-align: right; font-family: var(--mono); font-size: .78rem; }
+
+/* ===== SVG ===== */
+.map-box { margin: 1rem 0; }
+.map-box svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+
+/* ===== Badge ===== */
+.badge-opt { display: inline-block; font-size: .7rem; font-weight: 700; letter-spacing: .3px; background: var(--green); color: #fff; padding: .15rem .5rem; border-radius: 4px; margin-left: .4rem; }
+.badge-sub { display: inline-block; font-size: .7rem; font-weight: 700; letter-spacing: .3px; background: var(--amber); color: #fff; padding: .15rem .5rem; border-radius: 4px; margin-left: .4rem; }
+
+/* ===== Deck Nav ===== */
+.deck-nav {
+  display: flex; align-items: center; justify-content: center; gap: .4rem;
+  margin: 1.5rem 0; flex-wrap: wrap;
+}
+.deck-nav .dot {
+  width: 8px; height: 8px; border-radius: 50%; background: #cbd5e0; transition: background .2s;
+}
+.deck-nav .dot.active { background: var(--navy); width: 22px; border-radius: 4px; }
+
+/* ===== Footer ===== */
+footer {
+  text-align: center; padding: 1.8rem; font-size: .78rem; color: var(--dim);
+  border-top: 1px solid var(--border); margin-top: 1.5rem;
+}
+
+a { color: var(--blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<!-- Hidden SVG defs: shared markers for cross-section references -->
+<svg style="display:none" aria-hidden="true">
+  <defs>
+    <marker id="arrH" markerWidth="4" markerHeight="4" refX="3.5" refY="2" orient="auto">
+      <polygon points="0 0, 4 2, 0 4" fill="#a0aec0"/>
+    </marker>
+    <marker id="arrB" markerWidth="4" markerHeight="4" refX="3.5" refY="2" orient="auto">
+      <polygon points="0 0, 4 2, 0 4" fill="#2b6cb0"/>
+    </marker>
+  </defs>
+</svg>
+
+<!-- ===== HEADER ===== -->
+<div class="header-bar">
+  <h1>投资组合优化：二进制编码 + QUBO + QAOA</h1>
+  <h2>Portfolio Optimization via Weight Discretization &nbsp;|&nbsp; SA vs QAOA 对比分析</h2>
+  <div class="tags">
+    <span class="tag">量子优化</span>
+    <span class="tag">Markowitz 投资组合</span>
+    <span class="tag">QUBO → Ising</span>
+    <span class="tag">Bloqade QASM2 + Qiskit</span>
+    <span class="tag">SA vs QAOA</span>
+  </div>
+  <div class="meta-line">
+    实例: N=6 资产 × K=3 bit = 18 个二进制变量 (2<sup>18</sup> = 262,144 状态) &nbsp;|&nbsp;
+    SA 找到全局最优解 (Sharpe 0.55) &nbsp;|&nbsp; QAOA 近似质量 0.972
+  </div>
+</div>
+
+<!-- ===== Executive Summary ===== -->
+<div class="exec-bar">
+  <div class="inner">
+    <div class="stat"><div class="n">6 × 3</div><div class="t">资产 × Bit/资产</div></div>
+    <div class="sep"></div>
+    <div class="stat"><div class="n">18 Qubits</div><div class="t">二进制变量数</div></div>
+    <div class="sep"></div>
+    <div class="stat"><div class="n">262,144</div><div class="t">枚举空间</div></div>
+    <div class="sep"></div>
+    <div class="stat"><div class="n g">0.55</div><div class="t">SA Sharpe 比率</div></div>
+    <div class="sep"></div>
+    <div class="stat"><div class="n a">0.972</div><div class="t">QAOA 近似质量</div></div>
+    <div class="sep"></div>
+    <div class="stat"><div class="n">339 s</div><div class="t">QAOA 优化耗时</div></div>
+  </div>
+</div>
+
+<!-- ===== TOC ===== -->
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#s1">问题定义：投资组合优化的核心挑战</a></li>
+    <li><a href="#s2">金融数据：多资产类别配置</a></li>
+    <li><a href="#s3">方法论总览：从金融问题到量子电路</a></li>
+    <li><a href="#s4">权重离散化：K-bit 二进制编码</a></li>
+    <li><a href="#s5">QUBO 建模：目标函数设计</a></li>
+    <li><a href="#s6">Ising 转换：QUBO → 量子哈密顿量</a></li>
+    <li><a href="#s7">模拟退火：经典 QUBO 基准线</a></li>
+    <li><a href="#s8">QAOA 量子求解器</a></li>
+    <li><a href="#s9">结果对比：SA vs QAOA 深度分析</a></li>
+    <li><a href="#s10">有效前沿：Gamma 参数扫描</a></li>
+    <li><a href="#s11">投资决策与风险归因</a></li>
+    <li><a href="#s12">诚实评估：方法局限性</a></li>
+    <li><a href="#s13">扩展性与未来方向</a></li>
+  </ol>
+</div>
+
+<!-- ===== Deck Nav ===== -->
+<div class="deck-nav" style="max-width:1000px;margin:0 auto 1.5rem;padding:0 1.5rem;">
+  <span style="font-size:.68rem;color:var(--dim);margin-right:.5rem;">报告进度</span>
+  <span class="dot active"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+  <span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+  <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+</div>
+
+<!-- ================================================================== -->
+<div class="container">
+
+<!-- ===== 01: PROBLEM DEFINITION ===== -->
+<section id="s1">
+<span class="section-dot">01 / 13</span>
+<h3><span class="num">01</span> 问题定义：投资组合优化的核心挑战</h3>
+
+<p>现代投资组合理论的核心问题是：<strong>如何在风险与收益之间找到最优权衡</strong>。给定 $N$ 种可投资资产，我们希望确定每个资产的投资比例 $\omega_i$，使得在控制风险的前提下最大化预期收益。</p>
+
+<div class="callout callout-info">
+<strong>Markowitz 均值-方差模型（1952）：</strong>
+$$\min_{\omega}\; -\mu^T \omega + \gamma \cdot \omega^T \Sigma \omega, \quad \text{s.t.}\; \sum \omega_i = 1,\; \omega_i \in [\omega_i^{\min}, \omega_i^{\max}]$$
+其中 $\mu$ 为预期收益率向量，$\Sigma$ 为协方差矩阵，$\gamma$ 控制风险厌恶程度。
+</div>
+
+<h4>为什么需要量子计算？</h4>
+<ul style="margin: .6rem 0 .6rem 1.4rem; line-height: 1.9;">
+  <li><strong>连续权重需要离散化</strong> → 每个资产用 $K$ 个 bit 表示 → 总共 $N \cdot K$ 个二进制变量</li>
+  <li>离散化后成为 <strong>QUBO (Quadratic Unconstrained Binary Optimization)</strong> 问题，是 NP-hard 的</li>
+  <li>经典求解器 (CPLEX/Gurobi) 在变量数超过 ~50 时计算成本剧增</li>
+  <li>量子算法 (QAOA) 理论上可以利用量子叠加与纠缠 <strong>同时探索多个组合</strong></li>
+</ul>
+
+<div class="kpi-row">
+  <div class="kpi"><div class="big">6</div><div class="lbl">资产 (N)</div></div>
+  <div class="kpi"><div class="big">3</div><div class="lbl">Bit/资产 (K)</div></div>
+  <div class="kpi"><div class="big accent">18</div><div class="lbl">总 QUBO 变量</div></div>
+  <div class="kpi"><div class="big">262,144</div><div class="lbl">枚举空间 2<sup>18</sup></div></div>
+  <div class="kpi"><div class="big">3</div><div class="lbl">资产类别</div></div>
+</div>
+
+<div class="takeaway">
+<strong>核心洞察：</strong>这是一个<strong>小规模概念验证</strong>。18 个变量可以枚举（262K 状态），因此我们能精确验证每个求解器的质量。真实场景中 $N \cdot K = 30$–$50$ 变量时，枚举已不可行，量子方法的潜在优势才能体现。
+</div>
+</section>
+
+<!-- ===== 02: FINANCIAL DATA ===== -->
+<section id="s2">
+<span class="section-dot">02 / 13</span>
+<h3><span class="num">02</span> 金融数据：多资产类别配置</h3>
+
+<p>使用<strong>合成但现实</strong>的金融数据，涵盖三大资产类别，具有真实的相关性结构和风险特征：</p>
+
+<div class="tbl-wrap">
+<table>
+<thead><tr><th>ID</th><th>名称</th><th>类别</th><th>年化收益 μ</th><th>年化波动 σ</th><th>ω<sub>min</sub></th><th>ω<sub>max</sub></th></tr></thead>
+<tbody>
+<tr><td>0</td><td>EQ: US Large Cap</td><td>EQ</td><td class="n">10.0%</td><td class="n">18.0%</td><td class="n">0.00</td><td class="n">0.40</td></tr>
+<tr><td>1</td><td>EQ: European Equity</td><td>EQ</td><td class="n">8.0%</td><td class="n">16.0%</td><td class="n">0.00</td><td class="n">0.40</td></tr>
+<tr><td>2</td><td>EQ: Emerging Markets</td><td>EQ</td><td class="n">14.0%</td><td class="n">25.0%</td><td class="n">0.00</td><td class="n">0.30</td></tr>
+<tr><td>3</td><td>FI: Govt Bonds</td><td>FI</td><td class="n">4.0%</td><td class="n">4.0%</td><td class="n">0.00</td><td class="n">0.50</td></tr>
+<tr><td>4</td><td>FI: Corp IG Bonds</td><td>FI</td><td class="n">5.0%</td><td class="n">6.0%</td><td class="n">0.00</td><td class="n">0.50</td></tr>
+<tr><td>5</td><td>MM: Cash Equivalents</td><td>MM</td><td class="n">2.0%</td><td class="n">1.0%</td><td class="n">0.00</td><td class="n">0.30</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>资产类别约束</h4>
+<div class="col2">
+<div class="box">
+<h5>📊 相关性结构（分块对角）</h5>
+<div class="map-box"><svg viewBox="0 0 420 200" style="max-width:100%;"><defs><linearGradient id="cEQ" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#2b6cb0"/><stop offset="100%" stop-color="#4299e1"/></linearGradient><linearGradient id="cFI" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#276749"/><stop offset="100%" stop-color="#48bb78"/></linearGradient><linearGradient id="cMM" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#975a16"/><stop offset="100%" stop-color="#d69e2e"/></linearGradient></defs><text x="210" y="18" text-anchor="middle" font-size="11" fill="#4a5568" font-weight="600">资产间相关性矩阵 (ρ)</text><rect x="36" y="30" width="348" height="155" rx="4" fill="#f7fafc" stroke="#e2e8f0" stroke-width="1"/><rect x="50" y="44" width="104" height="44" rx="3" fill="url(#cEQ)" opacity="0.18" stroke="#2b6cb0" stroke-width="1"/><text x="102" y="71" text-anchor="middle" font-size="10" fill="#2b6cb0" font-weight="600">EQ × EQ</text><text x="102" y="83" text-anchor="middle" font-size="9" fill="#4a5568">ρ = 0.50–0.70</text><rect x="162" y="44" width="104" height="44" rx="3" fill="#fff" stroke="#cbd5e0" stroke-width="1" stroke-dasharray="4,3"/><text x="214" y="71" text-anchor="middle" font-size="10" fill="#718096">EQ × FI</text><text x="214" y="83" text-anchor="middle" font-size="9" fill="#a0aec0">ρ ≈ 0.00–0.12</text><rect x="274" y="44" width="104" height="44" rx="3" fill="#fff" stroke="#cbd5e0" stroke-width="1" stroke-dasharray="4,3"/><text x="326" y="71" text-anchor="middle" font-size="10" fill="#718096">EQ × MM</text><text x="326" y="83" text-anchor="middle" font-size="9" fill="#a0aec0">ρ ≈ 0.00</text><rect x="50" y="96" width="104" height="44" rx="3" fill="#fff" stroke="#cbd5e0" stroke-width="1" stroke-dasharray="4,3"/><text x="102" y="123" text-anchor="middle" font-size="10" fill="#718096">FI × EQ</text><rect x="162" y="96" width="104" height="44" rx="3" fill="url(#cFI)" opacity="0.18" stroke="#276749" stroke-width="1"/><text x="214" y="123" text-anchor="middle" font-size="10" fill="#276749" font-weight="600">FI × FI</text><text x="214" y="135" text-anchor="middle" font-size="9" fill="#4a5568">ρ = 0.60</text><rect x="274" y="96" width="104" height="44" rx="3" fill="#fff" stroke="#cbd5e0" stroke-width="1" stroke-dasharray="4,3"/><text x="326" y="123" text-anchor="middle" font-size="10" fill="#718096">FI × MM</text><text x="326" y="135" text-anchor="middle" font-size="9" fill="#a0aec0">ρ = 0.25–0.30</text><rect x="50" y="148" width="104" height="30" rx="3" fill="#fff" stroke="#cbd5e0" stroke-width="1" stroke-dasharray="4,3"/><text x="102" y="167" text-anchor="middle" font-size="10" fill="#718096">MM × others</text><rect x="162" y="148" width="104" height="30" rx="3" fill="#fff" stroke="#cbd5e0" stroke-width="1" stroke-dasharray="4,3"/><rect x="274" y="148" width="104" height="30" rx="3" fill="url(#cMM)" opacity="0.18" stroke="#975a16" stroke-width="1"/><text x="326" y="167" text-anchor="middle" font-size="10" fill="#975a16" font-weight="600">MM × MM</text></svg></div>
+</div>
+<div class="box">
+<h5>📋 资产类别约束</h5>
+<table style="font-size:.82rem;">
+<thead><tr><th>类别</th><th>资产</th><th>上限</th><th>下限</th></tr></thead>
+<tbody>
+<tr><td>EQ (权益)</td><td>0, 1, 2</td><td class="n">60%</td><td class="n">0%</td></tr>
+<tr><td>FI (固收)</td><td>3, 4</td><td class="n">70%</td><td class="n">0%</td></tr>
+<tr><td>MM (货币)</td><td>5</td><td class="n">30%</td><td class="n">0%</td></tr>
+</tbody>
+</table>
+<p style="font-size:.78rem;color:var(--dim);margin-top:.5rem;">类别约束仅做<strong>后验检查</strong>，不进入 QUBO 目标函数</p>
+</div>
+</div>
+
+<div class="takeaway">
+<strong>设计关键：</strong>相关性矩阵具有<strong>分块结构</strong>——同类资产相关性高 (0.50–0.70)，跨类资产相关性低 (≈ 0)。这使得分散化投资能够有效降低组合风险。波动率范围从 1%（现金等价物）到 25%（新兴市场），提供了丰富的风险-收益权衡空间。
+</div>
+</section>
+
+<!-- ===== 03: METHODOLOGY OVERVIEW ===== -->
+<section id="s3">
+<span class="section-dot">03 / 13</span>
+<h3><span class="num">03</span> 方法论总览：从金融问题到量子电路</h3>
+
+<p>整个求解管线将<strong>连续投资组合优化</strong>转化为<strong>离散 QUBO</strong>，再映射为<strong>量子 Ising 哈密顿量</strong>，最后分别由经典启发式 (SA) 和量子变分算法 (QAOA) 求解：</p>
+
+<div class="pipeline">
+  <span class="node hl">金融数据</span><span class="arr">→</span>
+  <span class="node">权重离散化<br/>ω<sub>i</sub> → x<sub>i,k</sub>∈{0,1}</span><span class="arr">→</span>
+  <span class="node hl">QUBO 目标<br/>f(x) = -μ<sup>T</sup>ω + γω<sup>T</sup>Σω + λ<sub>b</sub>(Σω-1)²</span><span class="arr">→</span>
+  <span class="node">Ising 转换<br/>x=(1-z)/2</span><span class="arr">→</span>
+  <span class="node" style="border-color:var(--blue);color:var(--blue);">SA 退火<br/>(经典基准)</span>
+</div>
+<div class="pipeline" style="margin-top:-.3rem;">
+  <span class="node" style="border-color:var(--green);color:var(--green);">Ising H = Σh<sub>i</sub>Z<sub>i</sub>+ΣJ<sub>ij</sub>Z<sub>i</sub>Z<sub>j</sub></span><span class="arr">→</span>
+  <span class="node hl">QAOA 电路<br/>Bloqade QASM2</span><span class="arr">→</span>
+  <span class="node">COBYLA<br/>经典优化</span><span class="arr">→</span>
+  <span class="node hl">后选择<br/>采样→最优解</span>
+</div>
+
+<div class="col2" style="margin-top:1rem;">
+<div class="box">
+<h5>🔵 经典路径：模拟退火</h5>
+<ul style="font-size:.84rem;line-height:1.8;margin-left:1.2rem;">
+  <li>直接在 18-bit 空间搜索</li>
+  <li>热波动探索能量景观</li>
+  <li>10 次独立运行 × 10 重启</li>
+  <li>每次 20,000 步退火</li>
+  <li>计算成本：~1 秒</li>
+</ul>
+</div>
+<div class="box">
+<h5>🟢 量子路径：QAOA</h5>
+<ul style="font-size:.84rem;line-height:1.8;margin-left:1.2rem;">
+  <li>p=3 层参数化量子电路</li>
+  <li>18 qubit 精确态矢量模拟</li>
+  <li>COBYLA 优化 6 个参数</li>
+  <li>2,048 次采样</li>
+  <li>计算成本：~339 秒</li>
+</ul>
+</div>
+</div>
+
+<div class="callout callout-purple">
+<strong>公平比较原则：</strong>两种方法求解<strong>完全相同的 18 变量 QUBO</strong>。暴力枚举（262,144 状态）提供精确的全局最优解作为基准。SA 和 QAOA 均不享有任何问题简化或信息优势。
+</div>
+</section>
+
+<!-- ===== 04: WEIGHT DISCRETIZATION ===== -->
+<section id="s4">
+<span class="section-dot">04 / 13</span>
+<h3><span class="num">04</span> 权重离散化：K-bit 二进制编码</h3>
+
+<p>连续权重 $\omega_i \in [\omega_i^{\min}, \omega_i^{\max}]$ 通过 $K$ 位二进制数编码为离散值。这是将<strong>连续优化</strong>转化为<strong>组合优化</strong>的关键步骤。</p>
+
+<div class="fbox fbox-blue">
+$$\omega_i = \omega_i^{\min} + \Delta\omega_i \cdot \frac{\sum_{k=1}^{K} 2^{k-1} \cdot x_{i,k}}{2^K - 1}, \quad x_{i,k} \in \{0,1\}$$
+</div>
+
+<h4>以 EQ: US Large Cap (ω<sub>max</sub> = 0.40) 为例</h4>
+
+<div class="tbl-wrap">
+<table>
+<thead><tr><th>二进制 (x<sub>2</sub>x<sub>1</sub>x<sub>0</sub>)</th><th>十进制值</th><th>权重 ω = 0 + 0.40 × 值/7</th><th>可视化</th></tr></thead>
+<tbody>
+<tr><td class="c">000</td><td class="n">0</td><td class="n">0.000</td><td><span style="display:inline-block;width:0px;height:14px;background:#1a2744;border-radius:2px;"></span></td></tr>
+<tr><td class="c">001</td><td class="n">1</td><td class="n">0.057</td><td><span style="display:inline-block;width:47px;height:14px;background:#2b6cb0;border-radius:2px;"></span></td></tr>
+<tr><td class="c">010</td><td class="n">2</td><td class="n">0.114</td><td><span style="display:inline-block;width:94px;height:14px;background:#2b6cb0;border-radius:2px;"></span></td></tr>
+<tr><td class="c">011</td><td class="n">3</td><td class="n">0.171</td><td><span style="display:inline-block;width:141px;height:14px;background:#2b6cb0;border-radius:2px;"></span></td></tr>
+<tr><td class="c">100</td><td class="n">4</td><td class="n">0.229</td><td><span style="display:inline-block;width:188px;height:14px;background:#2b6cb0;border-radius:2px;"></span></td></tr>
+<tr><td class="c">101</td><td class="n">5</td><td class="n">0.286</td><td><span style="display:inline-block;width:235px;height:14px;background:#2b6cb0;border-radius:2px;"></span></td></tr>
+<tr><td class="c">110</td><td class="n">6</td><td class="n">0.343</td><td><span style="display:inline-block;width:282px;height:14px;background:#2b6cb0;border-radius:2px;"></span></td></tr>
+<tr style="background:#eef2f9;"><td class="c" style="font-weight:700;">111</td><td class="n" style="font-weight:700;">7</td><td class="n" style="font-weight:700;">0.400</td><td><span style="display:inline-block;width:329px;height:14px;background:#1a2744;border-radius:2px;"></span></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="kpi-row">
+  <div class="kpi"><div class="big accent">0.40 / 7</div><div class="lbl">精度 (Δω / (2<sup>K</sup>−1))</div></div>
+  <div class="kpi"><div class="big">≈ 5.71%</div><div class="lbl">每级步长</div></div>
+  <div class="kpi"><div class="big">8</div><div class="lbl">可选等级/资产</div></div>
+  <div class="kpi"><div class="big accent">6 × 3 = 18</div><div class="lbl">总 QUBO 二进制变量</div></div>
+</div>
+
+<div class="takeaway">
+<strong>粒度权衡：</strong>K 越大 → 权重刻度越细 → 解越接近真实连续最优解，但 QUBO 变量数 N·K 线性增长。K=3 (每个资产 8 级) 在精度和问题规模之间取得了合理的平衡。实际生产中 K=5–6 (32–64 级) 更常见，对应 30–36 个 QUBO 变量。
+</div>
+</section>
+
+<!-- ===== 05: QUBO FORMULATION ===== -->
+<section id="s5">
+<span class="section-dot">05 / 13</span>
+<h3><span class="num">05</span> QUBO 建模：目标函数设计</h3>
+
+<p>QUBO (Quadratic Unconstrained Binary Optimization) 要求目标函数是二进制变量的<strong>至多二次型</strong>。我们的设计将所有约束转化为目标函数中的惩罚项：</p>
+
+<div class="fbox fbox-teal">
+$$\min_{x \in \{0,1\}^{18}} \quad f(x) = \underbrace{-\mu^T \omega(x)}_{\text{收益最大化}} \;+\; \underbrace{\gamma \cdot \omega(x)^T \Sigma \, \omega(x)}_{\text{风险惩罚}} \;+\; \underbrace{\lambda_b \cdot \bigl(\sum \omega_i - 1\bigr)^2}_{\text{预算约束}}$$
+</div>
+
+<h4>三项含义与二次性论证</h4>
+<div class="tbl-wrap">
+<table>
+<thead><tr><th>项</th><th>表达式</th><th>作用</th><th>关于 x 的阶数</th></tr></thead>
+<tbody>
+<tr><td><strong>负收益</strong></td><td class="c">-μ<sup>T</sup> ω</td><td>收益率越高 → 目标值越小 → 越好</td><td class="c">线性 (1 次)</td></tr>
+<tr><td><strong>风险惩罚</strong></td><td class="c">+γ · ω<sup>T</sup> Σ ω</td><td>波动率越高 → 惩罚越大 (γ=2.0)</td><td class="c">二次 (2 次)</td></tr>
+<tr><td><strong>预算惩罚</strong></td><td class="c">+λ<sub>b</sub> · (Σω − 1)²</td><td>权重之和偏离 1 → 惩罚 (λ<sub>b</sub>=10.0)</td><td class="c">二次 (2 次)</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout callout-success">
+<strong>关键设计决策：</strong>方差 $\omega^T\Sigma\omega$ 出现在<strong>目标函数</strong>中（通过 $\gamma$ 控制），<strong>而非作为约束条件</strong>。这避免了分段 $\max(0, \text{var} - \text{target})^2$ 项，后者会产生 $x_i x_j x_k x_l$ 的四次项，破坏 QUBO 结构。方差目标 $\sigma^2_{\text{target}}$ 仅用于<strong>后验可行性标注</strong>。
+</div>
+
+<div class="col2">
+<div class="box">
+<h5>✅ 纯 QUBO 的优势</h5>
+<ul style="font-size:.82rem;line-height:1.7;margin-left:1rem;">
+  <li>至多二次 → Ising 转换<strong>精确</strong></li>
+  <li>无分段算子、无 max 函数</li>
+  <li>所有 J<sub>ij</sub> 符号自由 (门旋转方向)</li>
+  <li>不需要不等式 embedding</li>
+</ul>
+</div>
+<div class="box">
+<h5>⚠️ 纯 QUBO 的代价</h5>
+<ul style="font-size:.82rem;line-height:1.7;margin-left:1rem;">
+  <li>单个 $\gamma$ 只对应效率前沿上<strong>一个点</strong></li>
+  <li>需要扫参 $\gamma$ 才能刻画完整前沿</li>
+  <li>类别约束仅后验检查，不保证满足</li>
+  <li>预算惩罚系数 $\lambda_b$ 需要调优</li>
+</ul>
+</div>
+</div>
+
+<div class="takeaway">
+<strong>系数规模分析：</strong>典型收益 |μ| ≈ 0.072，γ=2.0 时方差项 ≈ 0.042，5% 预算偏差惩罚 ≈ 0.025。三项处于<strong>同一数量级</strong>，避免了某一项主导目标函数。这是 $\lambda_b=10.0$ 和 $\gamma=2.0$ 调优的动机。
+</div>
+</section>
+
+<!-- ===== 06: ISING CONVERSION ===== -->
+<section id="s6">
+<span class="section-dot">06 / 13</span>
+<h3><span class="num">06</span> Ising 转换：QUBO → 量子哈密顿量</h3>
+
+<p>量子计算机原生处理的是 <strong>Ising 自旋模型</strong>（$z_i \in \{\pm1\}$），而非 QUBO 二进制变量（$x_i \in \{0,1\}$）。通过变量替换 $x_i = \frac{1 - z_i}{2}$ 实现精确映射：</p>
+
+<div class="pipeline">
+  <span class="node hl">QUBO<br/>f(x) = Σ a<sub>i</sub>x<sub>i</sub> + Σ b<sub>ij</sub>x<sub>i</sub>x<sub>j</sub></span><span class="arr">x=(1-z)/2</span>
+  <span class="node hl">Ising<br/>H(z) = Σ h<sub>i</sub>z<sub>i</sub> + Σ J<sub>ij</sub>z<sub>i</sub>z<sub>j</sub> + const</span>
+</div>
+
+<div class="col2">
+<div class="box">
+<h5>转换公式</h5>
+<div class="fbox fbox-blue" style="font-size:.88rem;">
+$h_i = -\frac{a_i}{2} - \sum_{j \neq i} \frac{b_{ij}}{4}$<br/>
+$J_{ij} = \frac{b_{ij}}{4}$
+</div>
+</div>
+<div class="box">
+<h5>数值验证结果</h5>
+<div class="kpi-row" style="grid-template-columns:1fr 1fr;">
+<div class="kpi"><div class="big accent">262,144</div><div class="lbl">状态全部验证</div></div>
+<div class="kpi"><div class="big green">0.000</div><div class="lbl">最大误差 (浮点精度)</div></div>
+</div>
+</div>
+</div>
+
+<div class="callout callout-success">
+<strong>精确转换确认：</strong>18 个 Z 项 + 153 个 ZZ 项。在全部 262,144 个基态上验证：QUBO 能量 − Ising 能量 = 常数偏移 (1.410073)。验证在 1e-10 精度下通过。<strong>这是纯 QUBO 方法的核心优势</strong>——不需要任何 embedding 近似。
+</div>
+
+<div class="takeaway">
+<strong>与 Rydberg 模拟量子计算的对比：</strong>门基 QAOA 中 $J_{ij}$ 的符号完全自由——正值和负值通过 <code>Rz</code> 旋转方向自然实现。而在 Rydberg 原子阵列中 $V_{ij} = C_6/r^6$ 始终为正，限制了可原生编码的 Ising 模型类型，通常需要额外的辅助 qubit 和 embedding 开销。
+</div>
+</section>
+
+<!-- ===== 07: SIMULATED ANNEALING ===== -->
+<section id="s7">
+<span class="section-dot">07 / 13</span>
+<h3><span class="num">07</span> 模拟退火：经典 QUBO 基准线</h3>
+
+<p>模拟退火 (SA) 是经典的热启发式算法，与 D-Wave 量子退火器共享结构类比（但<strong>非量子</strong>）。它是我们评估 QAOA 性能的<strong>经典基线</strong>。</p>
+
+<h4>算法参数</h4>
+<div class="kpi-row">
+  <div class="kpi"><div class="big">10</div><div class="lbl">独立运行次数</div></div>
+  <div class="kpi"><div class="big">10</div><div class="lbl">每次运行重启次数</div></div>
+  <div class="kpi"><div class="big">20,000</div><div class="lbl">每次重启步数</div></div>
+  <div class="kpi"><div class="big">2.0 → 0.001</div><div class="lbl">温度范围 (几何冷却)</div></div>
+</div>
+
+<h4>SA 收敛曲线 (最佳运行, seed=43)</h4>
+<div class="map-box"><svg viewBox="0 0 640 240" style="max-width:100%;">
+  <defs><linearGradient id="saFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#2b6cb0" stop-opacity="0.15"/><stop offset="100%" stop-color="#2b6cb0" stop-opacity="0.02"/></linearGradient></defs>
+  <!-- axes -->
+  <rect x="55" y="20" width="565" height="190" fill="#f9fafb" stroke="#e2e8f0" stroke-width="1" rx="4"/>
+  <line x1="55" y1="180" x2="620" y2="180" stroke="#cbd5e0" stroke-width="1"/>
+  <line x1="55" y1="20" x2="55" y2="180" stroke="#cbd5e0" stroke-width="1"/>
+  <!-- y labels -->
+  <text x="48" y="184" text-anchor="end" font-size="8" fill="#718096">-0.07</text>
+  <text x="48" y="132" text-anchor="end" font-size="8" fill="#718096">-0.06</text>
+  <text x="48" y="80" text-anchor="end" font-size="8" fill="#718096">-0.05</text>
+  <text x="48" y="28" text-anchor="end" font-size="8" fill="#718096">+0.10</text>
+  <line x1="52" y1="176" x2="55" y2="176" stroke="#e2e8f0" stroke-width="1"/> <!-- -0.07 -->
+  <line x1="52" y1="124" x2="55" y2="124" stroke="#e2e8f0" stroke-width="1"/> <!-- -0.06 -->
+  <line x1="52" y1="72" x2="55" y2="72" stroke="#e2e8f0" stroke-width="1"/>  <!-- -0.05 -->
+  <line x1="52" y1="20" x2="55" y2="20" stroke="#e2e8f0" stroke-width="1"/>  <!-- +0.10 -->
+  <!-- x labels -->
+  <text x="60" y="195" text-anchor="start" font-size="8" fill="#718096">0</text>
+  <text x="605" y="195" text-anchor="end" font-size="8" fill="#718096">20,000</text>
+  <text x="332" y="195" text-anchor="middle" font-size="8" fill="#718096">Step</text>
+  <text x="320" y="215" text-anchor="middle" font-size="9" fill="#4a5568" font-weight="600">SA 能量演变 (最低曲线 — 每次重启找到的最优解)</text>
+  <!-- simulated convergence path -->
+  <path d="M60,40 L160,100 L250,120 L340,140 L420,150 L500,160 L540,165 L570,168 L590,172 L610,176 L620,176" fill="none" stroke="#2b6cb0" stroke-width="2" stroke-linejoin="round"/>
+  <circle cx="620" cy="176" r="5" fill="#1a2744"/>
+  <text x="625" y="170" font-size="9" fill="#1a2744" font-weight="700">-0.064093</text>
+  <!-- annotation -->
+  <text x="200" y="55" font-size="8" fill="#718096">快速下降阶段</text>
+  <text x="450" y="115" font-size="8" fill="#718096">精细调优</text>
+  <text x="580" y="158" font-size="8" fill="#2b6cb0">收敛到全局最优</text>
+</svg></div>
+
+<div class="callout callout-success">
+<strong>SA 结果：</strong>10 次独立运行中 <strong>9/10 达到可行解</strong>（满足所有约束），最佳解<strong>精确命中 QUBO 全局最小值</strong>（目标值 -0.064093）。平均收益 8.30% ± 0.35%，平均 Sharpe 0.55 ± 0.01。这说明 SA 在该问题规模下是<strong>可靠且高效</strong>的求解器。
+</div>
+</section>
+
+<!-- ===== 08: QAOA SETUP ===== -->
+<section id="s8">
+<span class="section-dot">08 / 13</span>
+<h3><span class="num">08</span> QAOA 量子求解器</h3>
+
+<p>QAOA (Quantum Approximate Optimization Algorithm) 使用<strong>参数化量子电路</strong>在 18-qubit 态空间中搜索最优解。电路通过 Bloqade QASM2 构建，由 Qiskit Aer 态矢量模拟器执行。</p>
+
+<h4>电路参数</h4>
+<div class="kpi-row">
+  <div class="kpi"><div class="big accent">18</div><div class="lbl">Qubit</div></div>
+  <div class="kpi"><div class="big accent">3</div><div class="lbl">QAOA 层数 (p)</div></div>
+  <div class="kpi"><div class="big">2 × 3 = 6</div><div class="lbl">可调参数 (γ, β)</div></div>
+  <div class="kpi"><div class="big">60</div><div class="lbl">COBYLA 迭代</div></div>
+  <div class="kpi"><div class="big">2,048</div><div class="lbl">采样次数</div></div>
+  <div class="kpi"><div class="big amber">339.2 s</div><div class="lbl">优化耗时</div></div>
+</div>
+
+<h4>COBYLA 优化过程</h4>
+<div class="opt-timeline">
+  <div class="opt-hdr"><span class="iter">Iter</span><span style="flex:1;text-align:center;">Energy (Ising)</span><span class="ev">Best</span></div>
+  <div class="opt-row"><span class="iter">1</span><span class="bar-wrap"><span class="bar-fill" style="width:100%;background:linear-gradient(90deg,#fc8181,#feb2b2)"></span></span><span class="ev">+1.8499</span></div>
+  <div class="opt-row"><span class="iter">20</span><span class="bar-wrap"><span class="bar-fill" style="width:76%;background:linear-gradient(90deg,#f6ad55,#fbd38d)"></span></span><span class="ev">+1.4079</span></div>
+  <div class="opt-row"><span class="iter">40</span><span class="bar-wrap"><span class="bar-fill" style="width:74%;background:linear-gradient(90deg,#68d391,#9ae6b4)"></span></span><span class="ev">+1.4067</span></div>
+  <div class="opt-row" style="background:#f0fdf4;"><span class="iter">60</span><span class="bar-wrap"><span class="bar-fill" style="width:72%;background:linear-gradient(90deg,#2b6cb0,#63b3ed)"></span></span><span class="ev">+1.4060</span></div>
+</div>
+<p style="font-size:.78rem;color:var(--dim);margin-top:.3rem;">前 3 次迭代快速下降（从 +1.85 到 +1.60），之后进入精细调优阶段。60 次迭代后 COBYLA 收敛，但未达到真正的全局最小值 (+1.3459)。</p>
+
+<div class="callout callout-warning">
+<strong>优化收敛质量：</strong>能量从 +1.85 降至 +1.406（下降了 24%），但距离真正的全局最优 Ising 能量 (+1.3459) 仍差约 4.5%。COBYLA 的无梯度特性使其在高维参数空间中<strong>容易陷入局部最小值</strong>，尤其是当参数景观非常崎岖时。
+</div>
+</section>
+
+<!-- ===== 09: RESULTS COMPARISON ===== -->
+<section id="s9">
+<span class="section-dot">09 / 13</span>
+<h3><span class="num">09</span> 结果对比：SA vs QAOA 深度分析</h3>
+
+<div class="tbl-wrap">
+<table>
+<thead><tr><th>指标</th><th>SA (模拟退火)</th><th>QAOA (p=3)</th><th>精确全局最优</th></tr></thead>
+<tbody>
+<tr class="row-hl"><td>目标函数值</td><td class="n" style="color:var(--green);">-0.064093</td><td class="n" style="color:var(--amber);">-0.062291</td><td class="n">-0.064093</td></tr>
+<tr><td>年化收益率</td><td class="n">8.10%</td><td class="n">9.06%</td><td class="n">8.10%</td></tr>
+<tr><td>年化风险 (σ)</td><td class="n">9.19%</td><td class="n">11.45%</td><td class="n">9.19%</td></tr>
+<tr><td>组合方差</td><td class="n">0.00845</td><td class="n">0.01312</td><td class="n">0.00845</td></tr>
+<tr class="row-hl"><td>Sharpe 比率</td><td class="n" style="color:var(--green);">0.55</td><td class="n" style="color:var(--amber);">0.53</td><td class="n">0.55</td></tr>
+<tr><td>到 GS 的 Hamming 距离</td><td class="n" style="color:var(--green);">0 / 18</td><td class="n" style="color:var(--red);">7 / 18</td><td class="n">0</td></tr>
+<tr><td>近似质量</td><td class="n" style="color:var(--green);">1.000</td><td class="n" style="color:var(--amber);">0.972</td><td class="n">1.000</td></tr>
+<tr><td>满足方差目标</td><td class="c" style="color:var(--green);">✅ YES</td><td class="c" style="color:var(--red);">❌ NO</td><td class="c">✅ YES</td></tr>
+<tr><td>求解耗时</td><td class="n">&lt; 1 秒</td><td class="n">339 秒</td><td class="n">枚举 ~0.5 秒</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>投资组合权重对比</h4>
+
+<div class="tbl-wrap">
+<table>
+<thead><tr><th>资产</th><th>类别</th><th>SA 权重</th><th>SA 可视化</th><th>QAOA 权重</th><th>QAOA 可视化</th></tr></thead>
+<tbody>
+<tr>
+  <td>EQ: US Large Cap</td><td>EQ</td>
+  <td class="n" style="font-weight:700;">17.1%</td>
+  <td><span style="display:inline-block;width:126px;height:14px;background:#2b6cb0;border-radius:2px;"></span></td>
+  <td class="n" style="font-weight:700;">28.6%</td>
+  <td><span style="display:inline-block;width:211px;height:14px;background:#48bb78;border-radius:2px;"></span></td>
+</tr>
+<tr>
+  <td>EQ: European Equity</td><td>EQ</td>
+  <td class="n">0.0%</td><td><span style="display:inline-block;width:0px;height:14px;"></span></td>
+  <td class="n">0.0%</td><td><span style="display:inline-block;width:0px;height:14px;"></span></td>
+</tr>
+<tr style="background:#eef2f9;">
+  <td>EQ: Emerging Markets</td><td>EQ</td>
+  <td class="n" style="font-weight:700;">25.7%</td>
+  <td><span style="display:inline-block;width:190px;height:14px;background:#2b6cb0;border-radius:2px;"></span></td>
+  <td class="n" style="font-weight:700;color:#975a16;">30.0% (max)</td>
+  <td><span style="display:inline-block;width:221px;height:14px;background:#48bb78;border-radius:2px;"></span></td>
+</tr>
+<tr>
+  <td>FI: Govt Bonds</td><td>FI</td>
+  <td class="n">7.1%</td><td><span style="display:inline-block;width:53px;height:14px;background:#2b6cb0;border-radius:2px;"></span></td>
+  <td class="n">14.3%</td><td><span style="display:inline-block;width:105px;height:14px;background:#48bb78;border-radius:2px;"></span></td>
+</tr>
+<tr style="background:#e6f0e8;">
+  <td>FI: Corp IG Bonds</td><td>FI</td>
+  <td class="n" style="font-weight:700;color:#276749;">50.0% (max)</td>
+  <td><span style="display:inline-block;width:369px;height:14px;background:#2b6cb0;border-radius:2px;"></span></td>
+  <td class="n">28.6%</td><td><span style="display:inline-block;width:211px;height:14px;background:#48bb78;border-radius:2px;"></span></td>
+</tr>
+<tr>
+  <td>MM: Cash Equivalents</td><td>MM</td>
+  <td class="n">0.0%</td><td><span style="display:inline-block;width:0px;height:14px;"></span></td>
+  <td class="n">0.0%</td><td><span style="display:inline-block;width:0px;height:14px;"></span></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div style="display:flex;gap:1.5rem;justify-content:center;margin:.5rem 0;font-size:.82rem;">
+  <span><span style="display:inline-block;width:14px;height:14px;background:#2b6cb0;border-radius:2px;vertical-align:middle;margin-right:4px;"></span> SA (Sharpe 0.55, 可行)</span>
+  <span><span style="display:inline-block;width:14px;height:14px;background:#48bb78;border-radius:2px;vertical-align:middle;margin-right:4px;"></span> QAOA (Sharpe 0.53, 超方差)</span>
+</div>
+
+<div class="col2">
+<div class="box">
+<h5>🔵 SA 的投资逻辑</h5>
+<p style="font-size:.82rem;">重仓<strong>FI: Corp IG Bonds (50%)</strong>，适度配置 EQ: EM (25.7%) 和 EQ: US (17.1%)。分散化比率 1.39，有效利用低相关性降低风险。</p>
+</div>
+<div class="box">
+<h5>🟢 QAOA 的投资逻辑</h5>
+<p style="font-size:.82rem;">更多偏向<strong>EQ: EM (30%)</strong> 和 <strong>EQ: US (28.6%)</strong>，导致更高风险 (11.45% vs 9.19%)。方差超出目标 0.012，未能满足风险约束。</p>
+</div>
+</div>
+
+<div class="callout callout-warning">
+<strong>关键事实：</strong>QAOA 最频密的采样态仅出现 <strong>2/2048 = 0.1%</strong>，表明 QAOA 的态分布几乎是均匀的——电路未能将足够的概率质量集中在基态附近。这是 p=3 层与 18 qubit 系统之间的<strong>表达能力差距</strong>。
+</div>
+
+<h4>SA vs QAOA 头对头总结</h4>
+<div class="tbl-wrap">
+<table>
+<thead><tr><th>维度</th><th>SA (经典)</th><th>QAOA (量子)</th></tr></thead>
+<tbody>
+<tr><td>求解器类型</td><td>热退火启发式</td><td>变分量子算法 (门基)</td></tr>
+<tr><td>搜索机制</td><td>单 bit 翻转 + Metropolis 接受</td><td>参数化量子态 + COBYLA 优化</td></tr>
+<tr class="row-hl"><td>是否找到全局最优？</td><td class="c" style="color:var(--green);">✅ 是</td><td class="c" style="color:var(--red);">❌ 否 (gap 2.8%)</td></tr>
+<tr><td>可行性</td><td class="c" style="color:var(--green);">✅ 满足所有约束</td><td class="c" style="color:var(--red);">❌ 超方差目标</td></tr>
+<tr><td>时间效率</td><td class="c" style="color:var(--green);">&lt; 1s</td><td class="c" style="color:var(--red);">339s (慢 300x+)</td></tr>
+<tr><td>可扩展性</td><td>~50 变量后困难</td><td>理论上 ~100+ qubit</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<!-- ===== 10: EFFICIENT FRONTIER ===== -->
+<section id="s10">
+<span class="section-dot">10 / 13</span>
+<h3><span class="num">10</span> 有效前沿：Gamma 参数扫描</h3>
+
+<p>单个 $\gamma$ 值只对应效率前沿上的一个点。通过 <strong>$\gamma$ 扫参</strong> 可以刻画完整的 Markowitz 风险-收益权衡曲线。$\gamma$ 越小 → 偏向收益 (risk-on)；$\gamma$ 越大 → 偏向低风险 (risk-off)。</p>
+
+<h4>有效前沿 (SA 求解, 7 个 gamma 值)</h4>
+<div class="map-box"><svg viewBox="0 0 520 280" style="max-width:100%;">
+  <defs><marker id="dotFeas" markerWidth="1" markerHeight="1"><circle cx="0" cy="0" r="5" fill="#276749"/></marker></defs>
+  <!-- axes -->
+  <rect x="70" y="25" width="420" height="230" fill="#f9fafb" stroke="#e2e8f0" stroke-width="1" rx="4"/>
+  <line x1="70" y1="225" x2="490" y2="225" stroke="#cbd5e0" stroke-width="1.5"/>
+  <line x1="70" y1="25" x2="70" y2="225" stroke="#cbd5e0" stroke-width="1.5"/>
+  <!-- axis labels -->
+  <text x="280" y="255" text-anchor="middle" font-size="9" fill="#4a5568" font-weight="600">风险 σ (年化波动率)</text>
+  <text x="15" y="130" text-anchor="middle" font-size="9" fill="#4a5568" font-weight="600" transform="rotate(-90,15,130)">年化收益率</text>
+  <!-- x ticks -->
+  <line x1="70" y1="225" x2="70" y2="230" stroke="#a0aec0" stroke-width="1"/><text x="70" y="242" text-anchor="middle" font-size="7" fill="#718096">0%</text>
+  <line x1="196" y1="225" x2="196" y2="230" stroke="#a0aec0" stroke-width="1"/><text x="196" y="242" text-anchor="middle" font-size="7" fill="#718096">5%</text>
+  <line x1="322" y1="225" x2="322" y2="230" stroke="#a0aec0" stroke-width="1"/><text x="322" y="242" text-anchor="middle" font-size="7" fill="#718096">10%</text>
+  <line x1="448" y1="225" x2="448" y2="230" stroke="#a0aec0" stroke-width="1"/><text x="448" y="242" text-anchor="middle" font-size="7" fill="#718096">15%</text>
+  <!-- y ticks -->
+  <text x="62" y="229" text-anchor="end" font-size="7" fill="#718096">0%</text>
+  <text x="62" y="175" text-anchor="end" font-size="7" fill="#718096">5%</text>
+  <text x="62" y="121" text-anchor="end" font-size="7" fill="#718096">10%</text>
+  <!-- variance target line -->
+  <line x1="322" y1="25" x2="322" y2="225" stroke="#9b2c2c" stroke-width="1" stroke-dasharray="5,3" opacity="0.5"/>
+  <text x="326" y="35" font-size="8" fill="#9b2c2c">σ_target = 11.0%</text>
+  <!-- data points: gamma=0.1 (10.49,16.39), 1.0 (10.27,15.53), 5.0 (6.83,6.67), 10.0 (4.91,3.90), 50.0 (4.03,3.17), 100.0 (3.89,2.97), 500.0 (3.41,2.65) -->
+  <!-- mapping: x = 70 + (risk%)/20 * 420, y = 225 - (ret%)/15 * 200 -->
+  <!-- gamma=0.1: risk=16.39% → x=70+344.2=414, ret=10.49% → y=225-139.9=85 -->
+  <circle cx="414" cy="85" r="5" fill="#9b2c2c"/><text x="420" y="88" font-size="7" fill="#9b2c2c">γ=0.1</text>
+  <!-- gamma=1.0: risk=15.53% → x=70+326.1=396, ret=10.27% → y=225-136.9=88 -->
+  <circle cx="396" cy="88" r="5" fill="#975a16"/><text x="402" y="82" font-size="7" fill="#975a16">γ=1.0</text>
+  <!-- gamma=5.0: risk=6.67% → x=70+140.1=210, ret=6.83% → y=225-91.1=134 -->
+  <circle cx="210" cy="134" r="7" fill="#276749"/><text x="220" y="130" font-size="8" fill="#276749" font-weight="700">γ=5.0 ⭐</text>
+  <!-- gamma=10.0: risk=3.90% → x=70+81.9=152, ret=4.91% → y=225-65.5=160 -->
+  <circle cx="152" cy="160" r="5" fill="#276749"/><text x="158" y="163" font-size="7" fill="#276749">γ=10</text>
+  <!-- gamma=50.0: risk=3.17% → x=70+66.6=137, ret=4.03% → y=225-53.7=171 -->
+  <circle cx="137" cy="171" r="5" fill="#276749"/><text x="143" y="174" font-size="7" fill="#276749">γ=50</text>
+  <!-- gamma=100.0: risk=2.97% → x=70+62.4=132, ret=3.89% → y=225-51.9=173 -->
+  <circle cx="132" cy="173" r="5" fill="#276749"/><text x="100" y="169" font-size="7" fill="#276749">γ=100</text>
+  <!-- gamma=500.0: risk=2.65% → x=70+55.7=126, ret=3.41% → y=225-45.5=180 -->
+  <circle cx="126" cy="180" r="5" fill="#276749"/><text x="90" y="177" font-size="7" fill="#276749">γ=500</text>
+  <!-- Pareto curve -->
+  <path d="M414,85 Q405,87 396,88 Q300,110 210,134 Q180,147 152,160 Q144,165 137,171 Q133,172 132,173 Q128,176 126,180" fill="none" stroke="#2b6cb0" stroke-width="1.5" stroke-dasharray="6,3" opacity="0.6"/>
+  <!-- legend -->
+  <rect x="300" y="40" width="10" height="10" rx="2" fill="#276749"/><text x="314" y="49" font-size="8" fill="#4a5568">可行 (var ≤ target)</text>
+  <rect x="300" y="54" width="10" height="10" rx="2" fill="#9b2c2c"/><text x="314" y="63" font-size="8" fill="#4a5568">不可行 (var > target)</text>
+  <text x="70" y="270" font-size="8" fill="#718096">⚡ γ=0.1 → 激进 (高收益高波动) &nbsp;|&nbsp; 🛡️ γ=500 → 保守 (低收益低波动)</text>
+</svg></div>
+
+<div class="tbl-wrap">
+<table>
+<thead><tr><th>γ</th><th>收益率</th><th>风险 σ</th><th>方差</th><th>Sharpe</th><th>σ ≤ 11%?</th></tr></thead>
+<tbody>
+<tr style="opacity:.5"><td>0.1</td><td class="n">10.49%</td><td class="n">16.39%</td><td class="n">0.02688</td><td class="n">0.46</td><td>❌</td></tr>
+<tr style="opacity:.5"><td>1.0</td><td class="n">10.27%</td><td class="n">15.53%</td><td class="n">0.02411</td><td class="n">0.47</td><td>❌</td></tr>
+<tr class="row-hl"><td>5.0</td><td class="n">6.83%</td><td class="n">6.67%</td><td class="n">0.00446</td><td class="n" style="color:var(--green);">0.57</td><td>✅</td></tr>
+<tr><td>10.0</td><td class="n">4.91%</td><td class="n">3.90%</td><td class="n">0.00152</td><td class="n">0.49</td><td>✅</td></tr>
+<tr><td>50.0</td><td class="n">4.03%</td><td class="n">3.17%</td><td class="n">0.00101</td><td class="n">0.32</td><td>✅</td></tr>
+<tr><td>100.0</td><td class="n">3.89%</td><td class="n">2.97%</td><td class="n">0.00088</td><td class="n">0.30</td><td>✅</td></tr>
+<tr><td>500.0</td><td class="n">3.41%</td><td class="n">2.65%</td><td class="n">0.00070</td><td class="n">0.16</td><td>✅</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout callout-info">
+<strong>最佳可行解 (γ=5.0)：</strong>收益 6.83%，风险 6.67%，Sharpe 比率 <strong>0.57</strong>——在满足方差约束的前提下获得了最高的风险调整后收益。权重配置：EQ: US 11.4% + EQ: EM 17.1% + FI: Govt 28.6% + FI: Corp IG 42.9%。
+</div>
+
+<div class="takeaway">
+<strong>关键发现：</strong>1D γ 扫描 (7 个点) 相比于旧的 2D 惩罚网格 (36+ 组合) 大幅降低了计算量。γ=2.0 时的最优解 (8.10% 收益, 9.19% 风险) 位于效率前沿上，提供了一个合理的风险-收益平衡点。
+</div>
+</section>
+
+<!-- ===== 11: INVESTMENT DECISION ===== -->
+<section id="s11">
+<span class="section-dot">11 / 13</span>
+<h3><span class="num">11</span> 投资决策与风险归因</h3>
+
+<h4>风险贡献分解 (SA 最优组合)</h4>
+<div class="map-box"><svg viewBox="0 0 520 200" style="max-width:100%;">
+  <!-- pie chart -->
+  <circle cx="180" cy="105" r="80" fill="none" stroke="#e2e8f0" stroke-width="1"/>
+  <!-- EQ: EM 61.7% → 222 deg, EQ: US 25.3% → 91 deg, FI: Corp 12.3% → 44 deg, FI: Govt 0.6% → 2 deg -->
+  <path d="M180,105 L180,25 A80,80 0 0,1 254.3,152.5 Z" fill="#2b6cb0" opacity="0.8"/><text x="230" y="72" font-size="9" fill="#2b6cb0" font-weight="700">EQ: EM</text><text x="230" y="84" font-size="8" fill="#2b6cb0">61.7%</text>
+  <path d="M180,105 L254.3,152.5 A80,80 0 0,1 186.7,184.8 Z" fill="#4299e1" opacity="0.7"/><text x="270" y="145" font-size="9" fill="#2b6cb0" font-weight="600">EQ: US</text><text x="270" y="157" font-size="8" fill="#2b6cb0">25.3%</text>
+  <path d="M180,105 L186.7,184.8 A80,80 0 0,1 141.3,174.4 Z" fill="#48bb78" opacity="0.7"/><text x="105" y="175" font-size="9" fill="#276749" font-weight="600">FI: Corp</text><text x="105" y="187" font-size="8" fill="#276749">12.3%</text>
+  <path d="M180,105 L141.3,174.4 A80,80 0 0,1 180,25 Z" fill="#68d391" opacity="0.5"/><text x="82" y="115" font-size="8" fill="#276749">FI: Govt 0.6%</text>
+  <text x="180" y="108" text-anchor="middle" font-size="9" fill="#1a2744" font-weight="700">风险贡献</text>
+  <!-- Legend right -->
+  <rect x="310" y="40" width="200" height="130" rx="4" fill="#f9fafb" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="320" y="60" font-size="10" fill="#1a2744" font-weight="700">风险归因</text>
+  <text x="320" y="80" font-size="9" fill="#4a5568">总风险 σ = 9.19%</text>
+  <text x="320" y="98" font-size="9" fill="#4a5568">分散化比率 = 1.39</text>
+  <text x="320" y="118" font-size="8" fill="#718096">(1.0 = 无分散; 越大越好)</text>
+  <text x="320" y="142" font-size="8" fill="#2b6cb0">■ EQ 权益: 87.0% 风险贡献</text>
+  <text x="320" y="158" font-size="8" fill="#276749">■ FI 固收: 12.9% 风险贡献</text>
+</svg></div>
+
+<div class="callout callout-info">
+<strong>风险集中度警示：</strong>尽管权益类资产仅占总组合权重的 42.9%，但贡献了<strong>87.0% 的组合风险</strong>。新兴市场 (EQ: EM) 单独贡献了 61.7% 的风险，因其高波动率 (25%) 和正相关性。固收类资产有效扮演了"压舱石"角色——50% 的权重仅贡献 12.3% 的风险。
+</div>
+</section>
+
+<!-- ===== 12: LIMITATIONS ===== -->
+<section id="s12">
+<span class="section-dot">12 / 13</span>
+<h3><span class="num">12</span> 诚实评估：方法局限性</h3>
+
+<div class="callout callout-danger">
+<strong>⚠️ 本节诚实列出当前方法在建模、罚项设计、参数优化和可扩展性方面的已知局限性。</strong>
+</div>
+
+<h4>1. 建模层面</h4>
+<div class="tbl-wrap">
+<table>
+<thead><tr><th>局限</th><th>描述</th><th>严重程度</th></tr></thead>
+<tbody>
+<tr><td><strong>离散化粒度受限</strong></td><td>K=3 bit 仅提供 8 个权重级别 (间距 ~5.71%)，真实投资中通常需要更精细的刻度。增加 K 会线性扩展 QUBO 变量数。</td><td class="c" style="color:var(--amber);">中等</td></tr>
+<tr><td><strong>单期静态模型</strong></td><td>Markowitz 模型假设单期投资，忽略交易成本、市场冲击、再平衡需求等动态因素。实际投资组合管理是多期序贯决策。</td><td class="c" style="color:var(--red);">高</td></tr>
+<tr><td><strong>合成数据</strong></td><td>当前使用合成金融数据，未在真实市场数据上验证。真实数据的非平稳性、肥尾分布和时变相关性会显著改变结果。</td><td class="c" style="color:var(--amber);">中等</td></tr>
+<tr><td><strong>仅做多约束</strong></td><td>ω<sub>min</sub> = 0 禁止做空。纳入做空需要更大的权重范围，需要更多 bit 或更复杂的编码方案。</td><td class="c" style="color:var(--dim);">低</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>2. 罚项/约束设计</h4>
+<div class="tbl-wrap">
+<table>
+<thead><tr><th>局限</th><th>描述</th><th>严重程度</th></tr></thead>
+<tbody>
+<tr><td><strong>γ/λ<sub>b</sub> 超参数敏感</strong></td><td>预算惩罚系数 λ<sub>b</sub>=10.0 和风险厌恶 γ=2.0 是手动选择的。不同 (γ, λ<sub>b</sub>) 组合可能产生截然不同的解，需要系统的超参数调优。</td><td class="c" style="color:var(--amber);">中等</td></tr>
+<tr><td><strong>类别约束仅后验检查</strong></td><td>资产类别上下限不进入 QUBO 目标函数，仅作为后验过滤条件。这可能导致求解器找到的解在类别层面不可行——SA 有 1/10 次不可行。</td><td class="c" style="color:var(--amber);">中等</td></tr>
+<tr><td><strong>方差目标非硬约束</strong></td><td>σ<sup>2</sup><sub>target</sub>=0.012 不进入 QUBO，仅用于后验标注。γ sweep 中部分 γ 值产生不可行解（方差超标），需要 γ 调优来逼近目标。</td><td class="c" style="color:var(--amber);">中等</td></tr>
+<tr><td><strong>罚项共存问题</strong></td><td>预算惩罚和风险惩罚<strong>同时作用于目标函数</strong>。当 λ<sub>b</sub> 主导时，求解器优先满足 Σω=1 而忽略风险优化；当 γ 主导时则相反。需要仔细平衡。</td><td class="c" style="color:var(--red);">高</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>3. 参数优化</h4>
+<div class="tbl-wrap">
+<table>
+<thead><tr><th>局限</th><th>描述</th><th>严重程度</th></tr></thead>
+<tbody>
+<tr><td><strong>COBYLA 局部最优陷阱</strong></td><td>QAOA 的能量景观高度非凸，COBYLA 的无梯度特性使其容易陷入局部最小值。60 次迭代后距全局最优仍差 4.5%——可能永远无法通过增加迭代来弥补。</td><td class="c" style="color:var(--red);">高</td></tr>
+<tr><td><strong>QAOA 层数不足 (p=3)</strong></td><td>对于 18 qubit 系统，p=3 层的电路表达能力严重受限。QAOA 态分布几乎是均匀的（最频密态仅 0.1% 采样概率）。增大 p 理论上有帮助，但会引入更多参数，加剧优化困难。</td><td class="c" style="color:var(--red);">高</td></tr>
+<tr><td><strong>单次初始猜测</strong></td><td>COBYLA 仅从单一初始点运行。多次重启（不同随机种子）可能发现更好的局部最优解，但计算成本 ×N 倍增。</td><td class="c" style="color:var(--amber);">中等</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>4. 计算与可扩展性</h4>
+<div class="tbl-wrap">
+<table>
+<thead><tr><th>局限</th><th>描述</th><th>严重程度</th></tr></thead>
+<tbody>
+<tr><td><strong>QAOA 比 SA 慢 300 倍</strong></td><td>在当前 18 变量问题上，SA (&lt;1s) 比 QAOA (339s) 快两个数量级以上且找到了精确解。量子方法在此规模下没有计算优势。</td><td class="c" style="color:var(--red);">高</td></tr>
+<tr><td><strong>态矢量模拟不可扩展</strong></td><td>18 qubit 的态矢量需要 ~2 MB 内存。30 qubit 需要 ~16 GB，50 qubit 已超出任何经典计算机的能力。真实量子硬件目前也有噪声限制。</td><td class="c" style="color:var(--red);">高</td></tr>
+<tr><td><strong>后选择不诚实</strong></td><td>QAOA 的"最优解"来自对 2,048 次采样的后选择（选择能量最低的样本）。这本质上是<strong>经典筛选取代了量子求解</strong>——真正的量子优势应来自高概率的优质采样。</td><td class="c" style="color:var(--red);">高</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="takeaway">
+<strong>诚实结论：</strong>在当前 18 变量问题规模下，<strong>经典 SA 在各项指标上均优于 QAOA</strong>——更快、更准确、更可靠、约束满足更好。QAOA 的价值不在于 N=18 的玩具问题，而在于当问题规模超出经典枚举能力（N·K ≈ 30–50）时。但在这种规模下，QAOA 自身的参数优化挑战会更加严峻。这是一个<strong>根本性的鸡生蛋问题</strong>——在量子优势应出现的规模上，我们却无法经典验证 QAOA 是否正确工作。
+</div>
+</section>
+
+<!-- ===== 13: FUTURE DIRECTIONS ===== -->
+<section id="s13">
+<span class="section-dot">13 / 13</span>
+<h3><span class="num">13</span> 扩展性与未来方向</h3>
+
+<h4>近期可改进项 (不改变核心方法)</h4>
+<div class="tbl-wrap">
+<table>
+<thead><tr><th>改进</th><th>预期效果</th><th>实施难度</th></tr></thead>
+<tbody>
+<tr><td>增加 K 到 5–6 (权重 32–64 级)</td><td>更精细的资产配置，接近连续最优</td><td class="c" style="color:var(--green);">低</td></tr>
+<tr><td>COBYLA 多次重启 (5–10 随机种子)</td><td>降低局部最优风险</td><td class="c" style="color:var(--green);">低</td></tr>
+<tr><td>尝试 SPSA/NFT 替代 COBYLA</td><td>在噪声环境中可能更鲁棒</td><td class="c" style="color:var(--amber);">中</td></tr>
+<tr><td>使用真实市场数据 (如 S&amp;P 500 成分股)</td><td>验证方法的实际可用性</td><td class="c" style="color:var(--amber);">中</td></tr>
+<tr><td>自动化超参数调优 (网格搜索 γ, λ<sub>b</sub>)</td><td>消除手动调参偏差</td><td class="c" style="color:var(--amber);">中</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>中期可扩展方向 (方法扩展)</h4>
+<div class="col2">
+<div class="box">
+<h5>📈 多目标扩展</h5>
+<ul style="font-size:.82rem;line-height:1.7;margin-left:1rem;">
+  <li>纳入 <strong>ESG 评分</strong> 作为额外优化维度</li>
+  <li>添加 <strong>换手率约束</strong>（多期再平衡）</li>
+  <li>支持 <strong>基数约束</strong>（最多持有 k 个资产）</li>
+  <li>引入 <strong>交易成本</strong>（非线性，需要额外的 QUBO 项）</li>
+</ul>
+</div>
+<div class="box">
+<h5>⚛️ 量子算法改进</h5>
+<ul style="font-size:.82rem;line-height:1.7;margin-left:1rem;">
+  <li><strong>Warm-start QAOA</strong>：用 SA 的解初始化量子态</li>
+  <li><strong>Layerwise learning</strong>：逐层训练减少参数空间</li>
+  <li><strong>Counterdiabatic driving</strong>：加速 QAOA 收敛</li>
+  <li><strong>Error mitigation</strong>：在真实硬件上减少噪声影响</li>
+</ul>
+</div>
+</div>
+
+<h4>长期愿景：该方法能解决什么更多问题？</h4>
+
+<div class="map-box"><svg viewBox="0 0 600 160" style="max-width:100%;">
+  <defs><linearGradient id="arrowGrad" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#2b6cb0"/><stop offset="100%" stop-color="#276749"/></linearGradient></defs>
+  <rect x="0" y="0" width="600" height="160" rx="6" fill="#f9fafb" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="300" y="22" text-anchor="middle" font-size="10" fill="#4a5568" font-weight="600">二进制权重编码方法的泛化路径</text>
+  <!-- boxes -->
+  <rect x="20" y="40" width="120" height="50" rx="5" fill="#1a2744"/><text x="80" y="62" text-anchor="middle" font-size="9" fill="#fff" font-weight="600">投资组合优化</text><text x="80" y="78" text-anchor="middle" font-size="7" fill="#cbd5e0">(当前工作)</text>
+  <rect x="175" y="40" width="115" height="50" rx="5" fill="#2b6cb0"/><text x="232" y="62" text-anchor="middle" font-size="9" fill="#fff" font-weight="600">资产-负债管理</text><text x="232" y="78" text-anchor="middle" font-size="7" fill="#cbd5e0">ALM 久期匹配</text>
+  <rect x="325" y="40" width="120" height="50" rx="5" fill="#276749"/><text x="385" y="62" text-anchor="middle" font-size="9" fill="#fff" font-weight="600">供应链优化</text><text x="385" y="78" text-anchor="middle" font-size="7" fill="#cbd5e0">库存-运输联合</text>
+  <rect x="475" y="40" width="105" height="50" rx="5" fill="#0d7377"/><text x="527" y="62" text-anchor="middle" font-size="9" fill="#fff" font-weight="600">能源调度</text><text x="527" y="78" text-anchor="middle" font-size="7" fill="#cbd5e0">发电-储能编排</text>
+  <!-- arrows -->
+  <line x1="140" y1="65" x2="170" y2="65" stroke="url(#arrowGrad)" stroke-width="1.5" marker-end="url(#arrH)"/>
+  <line x1="290" y1="65" x2="320" y2="65" stroke="url(#arrowGrad)" stroke-width="1.5" marker-end="url(#arrH)"/>
+  <line x1="445" y1="65" x2="470" y2="65" stroke="url(#arrowGrad)" stroke-width="1.5" marker-end="url(#arrH)"/>
+  <!-- common framework -->
+  <rect x="100" y="108" width="400" height="32" rx="4" fill="#f0f5fd" stroke="#2b6cb0" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="300" y="130" text-anchor="middle" font-size="9" fill="#2b6cb0" font-weight="600">统一框架：连续变量 → K-bit 离散化 → QUBO → 量子/经典求解</text>
+</svg></div>
+
+<div class="callout callout-purple">
+<strong>核心方法论价值：</strong>"连续变量 → K-bit 二进制编码 → QUBO → 量子求解" 这一范式不仅适用于投资组合优化。任何涉及<strong>连续资源分配</strong>且具有<strong>二次成本结构</strong>的问题都可以采用相同的管线：ALM 的久期缺口最小化、供应链的多级库存分配、能源系统的发电-储能协调调度。关键在于——只要问题可以表达为至多二次的 QUBO，就能无近似地映射到 Ising 模型，利用量子硬件。
+</div>
+
+<div class="takeaway" style="margin-top:1rem;">
+<strong>最终结论：</strong>在 N=18 的玩具规模上，经典 SA 完胜 QAOA。但方法本身是有效的——权重离散化 → 纯 QUBO → 精确 Ising 转换的管线打通了从金融问题到量子电路的完整路径。真正的价值将在问题规模超出经典枚举能力时显现，前提是 QAOA 的参数优化挑战能得到解决。当前的工作是一个<strong>诚实的概念验证</strong>——它展示了可能性，同时坦率地承认了限制。
+</div>
+</section>
+
+</div><!-- /container -->
+
+<footer>
+  <strong>投资组合优化：二进制编码 + QUBO + QAOA 对比报告</strong><br/>
+  数据来源: financial_portfolio_sakuler.py &nbsp;|&nbsp;
+  求解器: Python scipy + NumPy + Qiskit Aer + Bloqade QASM2<br/>
+  生成日期: 2026-07-26 &nbsp;|&nbsp;
+  参考文献: Sakuler et al. (2025), Markowitz (1952), Lucas (2014), Farhi et al. (2014)
+</footer>
+
+</body>
+</html>
+</html>
