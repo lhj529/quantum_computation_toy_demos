@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rydberg 量子做市商：以期望收益为目标的最优脉冲控制 — 技术报告</title>
+<style>
+/* ========================================================================
+   Design Tokens — Navy + Slate Business Report
+   ======================================================================== */
+:root {
+  --navy:    #1a2744;
+  --navy2:   #243656;
+  --slate:   #4a5568;
+  --gray:    #718096;
+  --blue:    #2b6cb0;
+  --green:   #276749;
+  --amber:   #975a16;
+  --red:     #9b2c2c;
+  --purple:  #553c9a;
+  --bg:      #f5f6f8;
+  --card:    #ffffff;
+  --border:  #e2e6ed;
+  --code-bg: #1e293b;
+  --code-fg: #e2e8f0;
+  --shadow:  0 1px 4px rgba(0,0,0,0.06);
+  --radius:  8px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--slate);
+  background: var(--bg);
+  line-height: 1.7;
+  font-size: 15px;
+}
+
+/* ---- Top Bar ---- */
+.topbar {
+  background: linear-gradient(135deg, #0f1b2d 0%, var(--navy) 40%, #1e3a5f 100%);
+  padding: 48px 32px 36px;
+  text-align: center; color: #fff;
+  position: relative; overflow: hidden;
+}
+.topbar::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 30% 50%, rgba(43,108,176,0.25) 0%, transparent 70%),
+              radial-gradient(ellipse at 70% 60%, rgba(39,103,73,0.18) 0%, transparent 70%);
+}
+.topbar h1 { font-size: 1.9rem; font-weight: 700; position: relative; margin-bottom: 8px; }
+.topbar h1 span { color: #90cdf4; }
+.topbar .subtitle { font-size: 1.0rem; color: #cbd5e0; position: relative; margin-bottom: 18px; }
+.badges { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; position: relative; }
+.badge {
+  background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.22);
+  color: #e2e8f0; padding: 4px 14px; border-radius: 20px;
+  font-size: 0.80rem; font-weight: 500;
+}
+
+/* ---- Exec Summary ---- */
+.exec-bar {
+  max-width: 1000px; margin: -20px auto 0;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  padding: 22px 28px; display: flex; justify-content: space-around;
+  flex-wrap: wrap; gap: 12px; position: relative; z-index: 2;
+}
+.exec-bar .kpi { text-align: center; }
+.exec-bar .kpi .val { font-size: 1.55rem; font-weight: 700; color: var(--navy); }
+.exec-bar .kpi .val.g { color: var(--green); }
+.exec-bar .kpi .val.a { color: var(--amber); }
+.exec-bar .kpi .val.b { color: var(--blue); }
+.exec-bar .kpi .lbl { font-size: 0.76rem; color: var(--gray); margin-top: 2px; }
+.exec-bar .sep { width: 1px; background: var(--border); align-self: stretch; }
+
+/* ---- Container ---- */
+.container { max-width: 1000px; margin: 0 auto; padding: 32px 20px 60px; }
+
+/* ---- Section Card ---- */
+.section {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  margin-bottom: 28px; position: relative; overflow: hidden;
+}
+.section::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: linear-gradient(90deg, var(--navy), var(--blue));
+}
+.section-header { display: flex; align-items: center; gap: 12px; padding: 28px 28px 0; }
+.section-num {
+  background: var(--navy); color: #fff; font-weight: 700; font-size: 0.85rem;
+  width: 32px; height: 32px; display: flex; align-items: center;
+  justify-content: center; border-radius: 4px; flex-shrink: 0;
+}
+.section-header h2 { font-size: 1.2rem; color: var(--navy); font-weight: 700; }
+.section-body { padding: 20px 28px 28px; }
+.section-page { position: absolute; top: 30px; right: 28px; font-size: 0.72rem; color: #b0b8c4; }
+
+/* ---- Typography ---- */
+p { margin-bottom: 12px; }
+p:last-child { margin-bottom: 0; }
+strong { color: var(--navy); }
+h4 {
+  font-size: 1rem; color: var(--navy2); font-weight: 600;
+  padding-left: 12px; border-left: 3px solid var(--blue); margin: 22px 0 10px;
+}
+
+/* ---- Callouts ---- */
+.callout {
+  border-left: 3px solid; padding: 12px 16px; margin: 14px 0;
+  border-radius: 0 6px 6px 0; font-size: 0.88rem;
+}
+.callout.info    { border-color: var(--blue);  background: #ebf4fb; }
+.callout.success { border-color: var(--green); background: #edf7f0; }
+.callout.warning { border-color: var(--amber); background: #fef8f0; }
+.callout.danger  { border-color: var(--red);   background: #fdf2f2; }
+.callout.purple  { border-color: var(--purple);background: #f6f3fc; }
+.callout strong  { display: block; margin-bottom: 2px; }
+
+/* ---- KPI Grid ---- */
+.kpi-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 12px; margin: 16px 0;
+}
+.kpi-card {
+  background: #f8f9fb; border: 1px solid var(--border);
+  border-radius: var(--radius); text-align: center; padding: 16px 12px;
+}
+.kpi-card .num { font-size: 1.4rem; font-weight: 700; color: var(--navy); }
+.kpi-card .num.g { color: var(--green); }
+.kpi-card .num.b { color: var(--blue); }
+.kpi-card .num.a { color: var(--amber); }
+.kpi-card .num.r { color: var(--red); }
+.kpi-card .label { font-size: 0.76rem; color: var(--gray); margin-top: 2px; }
+
+/* ---- Formula Box ---- */
+.fbox {
+  border: 1px solid var(--border); background: #fafbfc;
+  border-radius: 6px; padding: 16px 22px; margin: 14px 0;
+  text-align: center; overflow-x: auto; font-size: 0.93rem;
+}
+
+/* ---- Tables ---- */
+.table-wrap { overflow-x: auto; margin: 14px 0; }
+table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+thead th {
+  background: var(--navy); color: #fff; text-align: left; padding: 9px 14px;
+  font-weight: 600; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.5px;
+}
+tbody td { padding: 7px 14px; border-bottom: 1px solid var(--border); }
+tbody tr:nth-child(even) { background: #f7f8fa; }
+tbody tr:hover { background: #edf2f9; }
+.row-hl { background: #edf7f0 !important; }
+.num { font-variant-numeric: tabular-nums; text-align: right; }
+
+/* ---- Two Column ---- */
+.col2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 14px 0; }
+@media (max-width: 680px) { .col2 { grid-template-columns: 1fr; } }
+
+/* ---- Takeaway ---- */
+.takeaway {
+  border: 1.5px dashed #c4d0dc; background: #f9fafc;
+  border-radius: 8px; padding: 18px 22px; margin: 18px 0;
+}
+.takeaway strong { color: var(--navy); font-weight: 700; }
+
+/* ---- Pipeline ---- */
+.pipeline {
+  display: flex; align-items: center; gap: 0; margin: 18px 0;
+  flex-wrap: wrap; justify-content: center; font-size: 0.84rem;
+}
+.pipe-node {
+  background: #f0f2f5; border: 1px solid var(--border);
+  padding: 9px 16px; border-radius: 6px; text-align: center;
+  font-weight: 600; color: var(--slate); white-space: nowrap;
+}
+.pipe-node.hl { background: var(--navy); color: #fff; border-color: var(--navy); }
+.pipe-arrow { color: #b0b8c4; font-size: 1.1rem; margin: 0 6px; font-weight: 700; }
+
+/* ---- Image ---- */
+.img-wrap { text-align: center; margin: 18px 0; }
+.img-wrap img { max-width: 100%; border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 1px 6px rgba(0,0,0,0.06); }
+.img-wrap .caption { font-size: 0.80rem; color: var(--gray); margin-top: 6px; }
+
+/* ---- Timeline ---- */
+.opt-timeline {
+  display: flex; margin: 14px 0; background: #e8ecf2;
+  border-radius: 6px; height: 40px; overflow: hidden; position: relative;
+}
+.opt-timeline .seg {
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.66rem; line-height: 1.25; font-weight: 600; color: #fff;
+  text-align: center; padding: 2px 4px;
+}
+
+/* ---- Comparison table highlight ---- */
+.pwl-cell { color: #975a16; }
+.opt-cell { color: #276749; font-weight: 600; }
+
+/* ---- Footer ---- */
+.footer {
+  max-width: 1000px; margin: 0 auto 40px; padding: 0 20px;
+  text-align: center; color: var(--gray); font-size: 0.80rem;
+}
+
+/* ---- Inline ---- */
+.tag-red { color: #9b2c2c; font-weight: 700; }
+.tag-green { color: #276749; font-weight: 600; }
+.hl-navy { color: var(--navy); font-weight: 600; }
+.tag-hard  { color: #9b2c2c; font-weight: 700; }
+.tag-strong{ color: #975a16; font-weight: 600; }
+.tag-mod   { color: #2b6cb0; font-weight: 600; }
+.tag-weak  { color: #718096; }
+.tag-free  { color: #276749; }
+</style>
+
+<script>
+MathJax = {
+  tex: {
+    inlineMath: [['$','$'], ['\\(','\\)']],
+    displayMath: [['$$','$$'], ['\\[','\\]']],
+    macros: {
+      rb: 'R_b',
+      dmin: '\\delta_{\\min}',
+      Csix: 'C_6',
+    }
+  },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════
+     TOP BAR
+     ═══════════════════════════════════════════════════════════ -->
+<header class="topbar">
+  <h1>Rydberg 量子做市商 <span>以期望收益为目标的最优脉冲控制</span></h1>
+  <p class="subtitle">Physics Ansatz + Nelder-Mead 直接优化期望 PnL &middot; Bloqade 0.34.0 &middot; Monte Carlo 采样驱动</p>
+  <div class="badges">
+    <span class="badge">E[PnL] Objective</span>
+    <span class="badge">Monte Carlo Sampling</span>
+    <span class="badge">Nelder-Mead</span>
+    <span class="badge">Analog Quantum</span>
+    <span class="badge">Market Making</span>
+    <span class="badge">N=11 Demo</span>
+  </div>
+</header>
+
+<!-- ═══════════════════════════════════════════════════════════
+     EXECUTIVE SUMMARY
+     ═══════════════════════════════════════════════════════════ -->
+<div class="exec-bar">
+  <div class="kpi">
+    <div class="val g">91.9%</div>
+    <div class="lbl">E[PnL] / Optimal（优化后）</div>
+  </div>
+  <div class="sep"></div>
+  <div class="kpi">
+    <div class="val">0.4964</div>
+    <div class="lbl">优化后 E[PnL]（PWL 基线 0.3492）</div>
+  </div>
+  <div class="sep"></div>
+  <div class="kpi">
+    <div class="val g">+44.1%</div>
+    <div class="lbl">E[PnL] 相对基线提升</div>
+  </div>
+  <div class="sep"></div>
+  <div class="kpi">
+    <div class="val b">45.20%</div>
+    <div class="lbl">P(最优解)（PWL 基线 0.15%）</div>
+  </div>
+  <div class="sep"></div>
+  <div class="kpi">
+    <div class="val a">219 次</div>
+    <div class="lbl">总求值次数（~98k 模拟）</div>
+  </div>
+  <div class="sep"></div>
+  <div class="kpi">
+    <div class="val" style="font-size:1.1rem;">40 s</div>
+    <div class="lbl">总运行时间</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     MAIN CONTENT
+     ═══════════════════════════════════════════════════════════ -->
+<div class="container">
+
+<!-- ───────────────────────────────────────────────────────────
+     01 — 问题背景
+     ─────────────────────────────────────────────────────────── -->
+<div class="section" id="s1">
+<div class="section-page">01 / 08</div>
+<div class="section-header">
+  <span class="section-num">01</span>
+  <h2>问题背景：做市商报价选择的量子优化</h2>
+</div>
+<div class="section-body">
+
+<p>做市商 (Market Maker) 在订单簿的多个价格档位挂出买卖报价以捕获价差收益。核心约束：<strong>任意两个活跃报价之间的价格间距不能小于 $\dmin = 0.30$</strong>，否则同侧报价互相蚕食流动性。每个价格档位有一个预期盈利权重 $v_i$，目标是在满足间距约束下<strong>最大化总预期收益 (PnL)</strong>。</p>
+
+<p>这等价于图论中的<strong>加权最大独立集 (MWIS)</strong> 问题：顶点 = 价格档位，边 = 间距不足的档位对，目标 = 最大权重独立集。</p>
+
+<div class="callout info">
+<strong>为什么选择 Rydberg 原子阵列？</strong>
+Rydberg 原子间的范德瓦尔斯 (vdW) 相互作用 $V_{ij} = \Csix/r_{ij}^6$ 天然惩罚邻近原子的同时激发——与 MWIS 的独立集约束在数学上同构。11 个价格档位映射为 11 个原子的一维链，Rydberg 阻塞效应作为物理"软约束"，连续时间模拟演化替代离散门分解。
+</div>
+
+<h4>核心问题链</h4>
+<div class="pipeline">
+  <div class="pipe-node">订单簿<br>11 个价格档位</div>
+  <span class="pipe-arrow">→</span>
+  <div class="pipe-node hl">Rydberg 原子阵列<br>1D 链编码</div>
+  <span class="pipe-arrow">→</span>
+  <div class="pipe-node">脉冲波形<br>控制量子演化</div>
+  <span class="pipe-arrow">→</span>
+  <div class="pipe-node hl">荧光读出<br>bitstring = 解</div>
+  <span class="pipe-arrow">→</span>
+  <div class="pipe-node hl">期望 PnL<br>评估质量</div>
+</div>
+
+</div>
+</div>
+
+<!-- ───────────────────────────────────────────────────────────
+     02 — 物理编码
+     ─────────────────────────────────────────────────────────── -->
+<div class="section" id="s2">
+<div class="section-page">02 / 08</div>
+<div class="section-header">
+  <span class="section-num">02</span>
+  <h2>物理编码：价格 → 原子位置的 MWIS 映射</h2>
+</div>
+<div class="section-body">
+
+<h4>原子状态编码</h4>
+<p>每个价格档位对应一个 <sup>87</sup>Rb 原子，囚禁在光镊中形成一维链。原子的内部状态直接编码决策变量：</p>
+
+<div class="col2">
+  <div style="background:#f0f4fb; border-radius:6px; padding:14px; text-align:center;">
+    <strong style="font-size:1.05rem; display:block; margin-bottom:2px;">$|r\rangle$ (Rydberg 态)</strong>
+    <span style="color:#4a5568;">$x_i = 1$ — 选择该报价</span>
+  </div>
+  <div style="background:#f0f4f8; border-radius:6px; padding:14px; text-align:center;">
+    <strong style="font-size:1.05rem; display:block; margin-bottom:2px;">$|g\rangle$ (基态)</strong>
+    <span style="color:#4a5568;">$x_i = 0$ — 跳过该报价</span>
+  </div>
+</div>
+
+<h4>价格 → 空间位置的线性映射</h4>
+
+<p>采用线性缩放因子 <strong>30 µm/价格单位</strong> 将非均匀价格网格映射到物理空间。这一映射的巧妙之处在于：<strong>非均匀的价格间距在物理空间中保留了其相对比例</strong>，使得 Rydberg 相互作用强度自动区分"必须分离"的档位对和"可以共存"的档位对。</p>
+
+<div class="fbox">
+$x_i^{\mathrm{pos}} = (p_i - p_{\mathrm{min}}) \times 30\ \mu\mathrm{m}, \qquad y_i = 0$
+</div>
+
+<div class="callout success">
+<strong>阻塞半径的精确校准</strong>
+名义阻塞半径 $\rb = \dmin \times \mathrm{scale} = 9.0\ \mu\mathrm{m}$。这使得间距 $\lt 0.30$ 价格单位的所有档位对（物理距离 $\lt 9.0\ \mu\mathrm{m}$）落入强阻塞区 ($V/\Omega \gt 2$)，而间距 $\ge 0.30$ 的档位对（物理距离 $\ge 9.9\ \mu\mathrm{m}$）落入弱相互作用区。阻塞边界与约束边界精确对齐。
+</div>
+
+<h4>权重编码：加法式局部失谐 $\Delta_i(t)$</h4>
+
+<p>Rydberg 系统的演化由以下哈密顿量驱动：</p>
+
+<div class="fbox">
+$\displaystyle H = \sum_i \frac{\Omega(t)}{2} \sigma_i^x
+       - \sum_i \Delta_i(t) n_i
+       + \sum_{i\lt j} V_{ij} n_i n_j$
+</div>
+
+<p>其中 $\Omega(t)$ 是 Rabi 频率（驱动原子在 $|g\rangle$ 和 $|r\rangle$ 之间相干演化），$V_{ij} = \Csix/r_{ij}^6$ 是 vdW 相互作用（阻塞惩罚），而 <strong>$\Delta_i(t)$ 是每个原子的局部失谐——权重信息的编码通道</strong>。</p>
+
+<p>采用<strong>加法式 (additive) 编码</strong>：</p>
+
+<div class="fbox">
+$\Delta_i(t) = \underbrace{\Delta_0(t)}_{\text{全局均匀斜坡}} \;+\; \underbrace{\alpha \cdot v_i \cdot s(t)}_{\text{权重依赖分裂}}$
+</div>
+
+<div class="col2">
+<div>
+<h4 style="margin-top:0;">两项的物理含义</h4>
+<ul style="padding-left:18px; font-size:0.88rem;">
+  <li><strong>$\Delta_0(t)$（全局斜坡）</strong>：所有原子统一从负失谐（$-\Delta_{\mathrm{amp}}$）经过零到正失谐（$+\Delta_{\mathrm{amp}}$），确保所有原子从相同的 $|g\rangle$ 初始态出发</li>
+  <li><strong>$\alpha \cdot v_i \cdot s(t)$（权重分裂）</strong>：通过包络函数 $s(t)$ 在退火过程中<strong>逐步打开</strong>权重依赖的能级偏置——高权重原子获得更强的正失谐偏置，更倾向于被激发到 $|r\rangle$ 态</li>
+</ul>
+</div>
+<div>
+<h4 style="margin-top:0;">为什么不用乘法式编码？</h4>
+<ul style="padding-left:18px; font-size:0.88rem;">
+  <li>乘法式 $\Delta_i = v_i \cdot f(t)$ 会导致<strong>非均匀初始制备</strong>：高权重原子从一开始就被过度抑制，起点不公平</li>
+  <li>加法式保证 $t=0$ 时 $\Delta_i(0) = \Delta_0(0)$（所有原子统一），权重差异仅在退火过程中逐渐显现</li>
+  <li>权重分裂强度由 $\alpha$ 控制——这就是后续最优控制优化的关键参数之一</li>
+</ul>
+</div>
+</div>
+
+<h4>退火协议：四阶段波形</h4>
+
+<table class="table-wrap">
+<thead><tr><th>阶段</th><th>时长 (µs)</th><th>$\Omega(t)$</th><th>$\Delta_0(t)$（全局）</th><th>$s(t)$（包络）</th><th>物理意义</th></tr></thead>
+<tbody>
+<tr><td>负失谐</td><td class="num">4.0 → 3.2</td><td class="num">0 → $\Omega_{\mathrm{max}}$</td><td class="num">$-\Delta_{\mathrm{amp}}$ → 0</td><td class="num">0 → 0</td><td>所有原子均匀初始化为 $|g\rangle$</td></tr>
+<tr><td>过零</td><td class="num">2.5 → 3.0</td><td class="num">$\Omega_{\mathrm{max}}$（保持）</td><td class="num">0 → $+\Delta_{\mathrm{amp}}$</td><td class="num">0 → 1</td><td>全局激发 + 权重分裂逐步打开</td></tr>
+<tr><td>正失谐保持</td><td class="num">2.5 → 2.68</td><td class="num">$\Omega_{\mathrm{max}}$（保持）</td><td class="num">$+\Delta_{\mathrm{amp}}$（保持）</td><td class="num">1 → 1</td><td>权重差异最大化，系统收敛</td></tr>
+<tr><td>下降</td><td class="num">1.0 → 1.12</td><td class="num">$\Omega_{\mathrm{max}}$ → 0</td><td class="num">$+\Delta_{\mathrm{amp}}$（保持）</td><td class="num">1 → 1</td><td>Rabi 缓降，冻结最终态</td></tr>
+</tbody>
+</table>
+
+<p>表中数值分别对应 PWL 基线参数和优化后参数（详见第 04 节）。<strong>权重-失谐耦合强度 $\alpha$ 是区分"硬约束"与"软权衡"的关键</strong>：$\alpha \cdot v_{\mathrm{max}} / \Delta_{\mathrm{amp}} \approx 0.49$（PWL）意味着权重偏置约为全局斜坡的一半，系统面临<strong>真正的优化权衡</strong>——紧簇中阻塞占主导，中等间距中高权重可以克服阻塞惩罚，宽间距中权重自由决定。</p>
+
+<h4>原子阵列配置</h4>
+<table class="table-wrap">
+<thead><tr>
+  <th>原子 idx</th><th>价格</th><th>权重 $v_i$</th><th>位置 (µm)</th>
+  <th>与前一原子间距 (µm)</th><th>间距 (价格单位)</th>
+</tr></thead>
+<tbody>
+<tr><td>0</td><td>98.50</td><td>0.04</td><td class="num">0.0</td><td class="num">—</td><td class="num">—</td></tr>
+<tr><td>1</td><td>98.62</td><td>0.11</td><td class="num">3.6</td><td class="num">3.6</td><td class="num">0.12</td></tr>
+<tr><td>2</td><td>98.91</td><td>0.08</td><td class="num">12.3</td><td class="num">8.7</td><td class="num">0.29</td></tr>
+<tr><td>3</td><td>99.05</td><td>0.03</td><td class="num">16.5</td><td class="num">4.2</td><td class="num">0.14</td></tr>
+<tr><td>4</td><td>99.12</td><td>0.12</td><td class="num">18.6</td><td class="num">2.1</td><td class="num" style="color:#9b2c2c;font-weight:700;">0.07 ⚠</td></tr>
+<tr><td>5</td><td>99.45</td><td>0.06</td><td class="num">28.5</td><td class="num">9.9</td><td class="num">0.33</td></tr>
+<tr><td>6</td><td>99.90</td><td>0.09</td><td class="num">42.0</td><td class="num">13.5</td><td class="num">0.45</td></tr>
+<tr><td>7</td><td>100.02</td><td>0.05</td><td class="num">45.6</td><td class="num">3.6</td><td class="num">0.12</td></tr>
+<tr><td>8</td><td>100.40</td><td>0.10</td><td class="num">57.0</td><td class="num">11.4</td><td class="num">0.38</td></tr>
+<tr><td>9</td><td>100.55</td><td>0.13</td><td class="num">61.5</td><td class="num">4.5</td><td class="num">0.15</td></tr>
+<tr class="row-hl"><td>10</td><td>101.10</td><td>0.03</td><td class="num">78.0</td><td class="num">16.5</td><td class="num">0.55</td></tr>
+</tbody>
+</table>
+
+<div class="img-wrap" style="margin-top:14px;">
+<svg viewBox="0 0 960 440" style="max-width:100%; height:auto; font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;"><defs><marker id="ab2" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto"><path d="M0,0 L6,2 L0,4 Z" fill="#2b6cb0"/></marker></defs>
+<rect x="0" y="0" width="960" height="148" rx="6" fill="#f8f9fb" stroke="#e2e6ed"/><rect x="0" y="0" width="960" height="24" rx="6" fill="#1a2744"/><rect x="0" y="12" width="960" height="12" fill="#1a2744"/><text x="480" y="17" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">Order Book — Price Levels &amp; PnL Weights</text>
+<line x1="50" y1="90" x2="895" y2="90" stroke="#4a5568" stroke-width="1.2"/><text x="20" y="93" text-anchor="middle" fill="#4a5568" font-size="8">Price</text>
+<line x1="60" y1="80" x2="60" y2="98" stroke="#4a5568" stroke-width="1.3"/><text x="60" y="76" text-anchor="middle" fill="#243656" font-size="8" font-weight="600">98.50</text><rect x="43" y="104" width="34" height="13" rx="3" fill="#90CAF9" opacity=".8"/><text x="60" y="113" text-anchor="middle" fill="#1a2744" font-size="7.5" font-weight="600">w=.04</text>
+<line x1="97.8" y1="80" x2="97.8" y2="98" stroke="#4a5568" stroke-width="1.3"/><text x="97.8" y="76" text-anchor="middle" fill="#243656" font-size="8" font-weight="600">98.62</text><rect x="80.8" y="104" width="34" height="13" rx="3" fill="#2196F3" opacity=".6"/><text x="97.8" y="113" text-anchor="middle" fill="#fff" font-size="7.5" font-weight="600">w=.11</text><text x="78.9" y="128" text-anchor="middle" fill="#718096" font-size="6.5">Δ=0.12</text>
+<line x1="189.15" y1="80" x2="189.15" y2="98" stroke="#4a5568" stroke-width="1.3"/><text x="189.15" y="76" text-anchor="middle" fill="#243656" font-size="8" font-weight="600">98.91</text><rect x="172.15" y="104" width="34" height="13" rx="3" fill="#2196F3" opacity=".5"/><text x="189.15" y="113" text-anchor="middle" fill="#fff" font-size="7.5" font-weight="600">w=.08</text><text x="143.5" y="128" text-anchor="middle" fill="#718096" font-size="6.5">Δ=0.29</text>
+<line x1="233.25" y1="80" x2="233.25" y2="98" stroke="#4a5568" stroke-width="1.3"/><text x="233.25" y="76" text-anchor="middle" fill="#243656" font-size="8" font-weight="600">99.05</text><rect x="216.25" y="104" width="34" height="13" rx="3" fill="#BBDEFB" opacity=".8"/><text x="233.25" y="113" text-anchor="middle" fill="#1a2744" font-size="7.5" font-weight="600">w=.03</text><text x="211.2" y="128" text-anchor="middle" fill="#718096" font-size="6.5">Δ=0.14</text>
+<line x1="255.3" y1="80" x2="255.3" y2="98" stroke="#4a5568" stroke-width="1.3"/><text x="255.3" y="76" text-anchor="middle" fill="#243656" font-size="8" font-weight="600">99.12</text><rect x="238.3" y="104" width="34" height="13" rx="3" fill="#0D47A1" opacity=".85"/><text x="255.3" y="113" text-anchor="middle" fill="#fff" font-size="7.5" font-weight="600">w=.12</text>
+<rect x="210" y="42" width="70" height="15" rx="7" fill="#9b2c2c" opacity=".12"/><text x="245" y="52" text-anchor="middle" fill="#9b2c2c" font-size="7" font-weight="700">tightest</text>
+<text x="244.3" y="128" text-anchor="middle" fill="#9b2c2c" font-size="6.5" font-weight="700">Δ=0.07!</text>
+<line x1="359.25" y1="80" x2="359.25" y2="98" stroke="#4a5568" stroke-width="1.3"/><text x="359.25" y="76" text-anchor="middle" fill="#243656" font-size="8" font-weight="600">99.45</text><rect x="342.25" y="104" width="34" height="13" rx="3" fill="#2196F3" opacity=".45"/><text x="359.25" y="113" text-anchor="middle" fill="#fff" font-size="7.5" font-weight="600">w=.06</text><text x="307.3" y="128" text-anchor="middle" fill="#718096" font-size="6.5">Δ=0.33</text>
+<line x1="501" y1="80" x2="501" y2="98" stroke="#4a5568" stroke-width="1.3"/><text x="501" y="76" text-anchor="middle" fill="#243656" font-size="8" font-weight="600">99.90</text><rect x="484" y="104" width="34" height="13" rx="3" fill="#2196F3" opacity=".55"/><text x="501" y="113" text-anchor="middle" fill="#fff" font-size="7.5" font-weight="600">w=.09</text><text x="430.1" y="128" text-anchor="middle" fill="#276749" font-size="6.5">Δ=0.45</text>
+<rect x="376" y="42" width="106" height="15" rx="7" fill="#276749" opacity=".12"/><text x="429" y="52" text-anchor="middle" fill="#276749" font-size="7" font-weight="700">widest gap</text>
+<line x1="538.8" y1="80" x2="538.8" y2="98" stroke="#4a5568" stroke-width="1.3"/><text x="538.8" y="76" text-anchor="middle" fill="#243656" font-size="8" font-weight="600">100.02</text><rect x="521.8" y="104" width="34" height="13" rx="3" fill="#BBDEFB" opacity=".8"/><text x="538.8" y="113" text-anchor="middle" fill="#1a2744" font-size="7.5" font-weight="600">w=.05</text><text x="519.9" y="128" text-anchor="middle" fill="#718096" font-size="6.5">Δ=0.12</text>
+<line x1="658.5" y1="80" x2="658.5" y2="98" stroke="#4a5568" stroke-width="1.3"/><text x="658.5" y="76" text-anchor="middle" fill="#243656" font-size="8" font-weight="600">100.40</text><rect x="641.5" y="104" width="34" height="13" rx="3" fill="#2196F3" opacity=".55"/><text x="658.5" y="113" text-anchor="middle" fill="#fff" font-size="7.5" font-weight="600">w=.10</text><text x="598.7" y="128" text-anchor="middle" fill="#718096" font-size="6.5">Δ=0.38</text>
+<line x1="705.75" y1="80" x2="705.75" y2="98" stroke="#4a5568" stroke-width="1.3"/><text x="705.75" y="76" text-anchor="middle" fill="#243656" font-size="8" font-weight="600">100.55</text><rect x="688.75" y="104" width="34" height="13" rx="3" fill="#0D47A1" opacity=".9"/><text x="705.75" y="113" text-anchor="middle" fill="#fff" font-size="7.5" font-weight="600">w=.13*</text><text x="682.1" y="128" text-anchor="middle" fill="#718096" font-size="6.5">Δ=0.15</text>
+<line x1="879" y1="80" x2="879" y2="98" stroke="#4a5568" stroke-width="1.3"/><text x="879" y="76" text-anchor="middle" fill="#243656" font-size="8" font-weight="600">101.10</text><rect x="862" y="104" width="34" height="13" rx="3" fill="#BBDEFB" opacity=".8"/><text x="879" y="113" text-anchor="middle" fill="#1a2744" font-size="7.5" font-weight="600">w=.03</text><text x="792.4" y="128" text-anchor="middle" fill="#276749" font-size="6.5">Δ=0.55</text>
+<line x1="480" y1="133" x2="480" y2="200" stroke="#2b6cb0" stroke-width="1.8" marker-end="url(#ab2)"/><rect x="260" y="150" width="440" height="30" rx="6" fill="#ebf4fb" stroke="#2b6cb0"/><text x="480" y="163" text-anchor="middle" fill="#2b6cb0" font-size="10" font-weight="700">Mapping: x_pos = (P - Pmin) x 30 um/price</text><text x="480" y="175" text-anchor="middle" fill="#4a5568" font-size="8.5">Non-uniform price gaps become non-uniform physical distances</text>
+<rect x="0" y="205" width="960" height="233" rx="6" fill="#fafbfc" stroke="#e2e6ed"/><rect x="0" y="205" width="960" height="24" rx="6" fill="#1a2744"/><rect x="0" y="217" width="960" height="12" fill="#1a2744"/><text x="480" y="221" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">Rydberg Atom Array — 1D Chain + Blockade Geometry (Rb = 9.0 um)</text>
+<line x1="50" y1="320" x2="895" y2="320" stroke="#4a5568" stroke-width="1.2"/><text x="20" y="323" text-anchor="middle" fill="#4a5568" font-size="8">x</text><text x="35" y="323" text-anchor="middle" fill="#4a5568" font-size="7">(um)</text>
+<circle cx="60" cy="320" r="94.5" fill="#E53935" fill-opacity=".04" stroke="#E53935" stroke-opacity=".15" stroke-width=".8" stroke-dasharray="4,3"/><circle cx="97.8" cy="320" r="94.5" fill="#E53935" fill-opacity=".04" stroke="#E53935" stroke-opacity=".15" stroke-width=".8" stroke-dasharray="4,3"/><circle cx="189.15" cy="320" r="94.5" fill="#E53935" fill-opacity=".04" stroke="#E53935" stroke-opacity=".15" stroke-width=".8" stroke-dasharray="4,3"/><circle cx="233.25" cy="320" r="94.5" fill="#E53935" fill-opacity=".04" stroke="#E53935" stroke-opacity=".15" stroke-width=".8" stroke-dasharray="4,3"/><circle cx="255.3" cy="320" r="94.5" fill="#E53935" fill-opacity=".04" stroke="#E53935" stroke-opacity=".15" stroke-width=".8" stroke-dasharray="4,3"/><circle cx="359.25" cy="320" r="94.5" fill="#E53935" fill-opacity=".04" stroke="#E53935" stroke-opacity=".15" stroke-width=".8" stroke-dasharray="4,3"/><circle cx="501" cy="320" r="94.5" fill="#E53935" fill-opacity=".04" stroke="#E53935" stroke-opacity=".15" stroke-width=".8" stroke-dasharray="4,3"/><circle cx="538.8" cy="320" r="94.5" fill="#E53935" fill-opacity=".04" stroke="#E53935" stroke-opacity=".15" stroke-width=".8" stroke-dasharray="4,3"/><circle cx="658.5" cy="320" r="94.5" fill="#E53935" fill-opacity=".04" stroke="#E53935" stroke-opacity=".15" stroke-width=".8" stroke-dasharray="4,3"/><circle cx="705.75" cy="320" r="94.5" fill="#E53935" fill-opacity=".04" stroke="#E53935" stroke-opacity=".15" stroke-width=".8" stroke-dasharray="4,3"/><circle cx="879" cy="320" r="94.5" fill="#E53935" fill-opacity=".04" stroke="#E53935" stroke-opacity=".15" stroke-width=".8" stroke-dasharray="4,3"/>
+<line x1="60" y1="330" x2="97.8" y2="330" stroke="#E53935" stroke-width="2" opacity=".5"/><line x1="97.8" y1="332" x2="189.15" y2="332" stroke="#E53935" stroke-width="2" opacity=".5"/><line x1="189.15" y1="334" x2="233.25" y2="334" stroke="#E53935" stroke-width="2" opacity=".5"/><line x1="233.25" y1="336" x2="255.3" y2="336" stroke="#E53935" stroke-width="2" opacity=".5"/><path d="M189.15,334 Q222,350 255.3,336" fill="none" stroke="#E53935" stroke-width="1.4" stroke-dasharray="3,2" opacity=".4"/><line x1="501" y1="332" x2="538.8" y2="332" stroke="#E53935" stroke-width="2" opacity=".5"/><line x1="658.5" y1="332" x2="705.75" y2="332" stroke="#E53935" stroke-width="2" opacity=".5"/>
+<circle cx="60" cy="320" r="8" fill="#90CAF9" stroke="#0D47A1" stroke-width="1.5"/><circle cx="97.8" cy="320" r="7.5" fill="#42A5F5" stroke="#0D47A1" stroke-width="1.5"/><circle cx="189.15" cy="320" r="7.5" fill="#64B5F6" stroke="#0D47A1" stroke-width="1.5"/><circle cx="233.25" cy="320" r="6.5" fill="#BBDEFB" stroke="#0D47A1" stroke-width="1.2"/><circle cx="255.3" cy="320" r="9" fill="#1E88E5" stroke="#0D47A1" stroke-width="2"/><circle cx="359.25" cy="320" r="7" fill="#90CAF9" stroke="#0D47A1" stroke-width="1.3"/><circle cx="501" cy="320" r="7.5" fill="#64B5F6" stroke="#0D47A1" stroke-width="1.5"/><circle cx="538.8" cy="320" r="7" fill="#90CAF9" stroke="#0D47A1" stroke-width="1.3"/><circle cx="658.5" cy="320" r="7.5" fill="#42A5F5" stroke="#0D47A1" stroke-width="1.5"/><circle cx="705.75" cy="320" r="9.5" fill="#1565C0" stroke="#0D47A1" stroke-width="2"/><circle cx="879" cy="320" r="6.5" fill="#BBDEFB" stroke="#0D47A1" stroke-width="1.2"/>
+<text x="60" y="308" text-anchor="middle" fill="#4a5568" font-size="7.5" font-weight="600">a0</text><text x="97.8" y="308" text-anchor="middle" fill="#4a5568" font-size="7.5" font-weight="600">a1</text><text x="189.15" y="308" text-anchor="middle" fill="#4a5568" font-size="7.5" font-weight="600">a2</text><text x="233.25" y="308" text-anchor="middle" fill="#4a5568" font-size="7.5" font-weight="600">a3</text><text x="255.3" y="308" text-anchor="middle" fill="#4a5568" font-size="7.5" font-weight="600">a4</text><text x="359.25" y="308" text-anchor="middle" fill="#4a5568" font-size="7.5" font-weight="600">a5</text><text x="501" y="308" text-anchor="middle" fill="#4a5568" font-size="7.5" font-weight="600">a6</text><text x="538.8" y="308" text-anchor="middle" fill="#4a5568" font-size="7.5" font-weight="600">a7</text><text x="658.5" y="308" text-anchor="middle" fill="#4a5568" font-size="7.5" font-weight="600">a8</text><text x="705.75" y="308" text-anchor="middle" fill="#4a5568" font-size="7.5" font-weight="600">a9</text><text x="879" y="308" text-anchor="middle" fill="#4a5568" font-size="7.5" font-weight="600">a10</text>
+<text x="78.9" y="352" text-anchor="middle" fill="#9b2c2c" font-size="6.5">3.6um</text><text x="143.5" y="352" text-anchor="middle" fill="#975a16" font-size="6.5">8.7um</text><text x="211.2" y="352" text-anchor="middle" fill="#9b2c2c" font-size="6.5">4.2um</text><text x="244.3" y="365" text-anchor="middle" fill="#9b2c2c" font-size="7" font-weight="700">2.1um!</text><text x="307.3" y="352" text-anchor="middle" fill="#2b6cb0" font-size="6.5">9.9um</text><text x="430.1" y="352" text-anchor="middle" fill="#276749" font-size="6.5">13.5um</text><text x="519.9" y="352" text-anchor="middle" fill="#9b2c2c" font-size="6.5">3.6um</text><text x="598.7" y="352" text-anchor="middle" fill="#718096" font-size="6.5">11.4um</text><text x="682.1" y="352" text-anchor="middle" fill="#9b2c2c" font-size="6.5">4.5um</text><text x="792.4" y="352" text-anchor="middle" fill="#276749" font-size="7" font-weight="600">16.5um</text>
+<rect x="40" y="385" width="530" height="40" rx="4" fill="#fff" stroke="#e2e6ed"/><circle cx="58" cy="400" r="5" fill="#1565C0" stroke="#0D47A1" stroke-width="1"/><text x="68" y="404" fill="#4a5568" font-size="7.5">High w</text><circle cx="120" cy="400" r="4" fill="#BBDEFB" stroke="#0D47A1" stroke-width="1"/><text x="128" y="404" fill="#4a5568" font-size="7.5">Low w</text><line x1="168" y1="400" x2="186" y2="400" stroke="#E53935" stroke-width="2" opacity=".5"/><text x="191" y="404" fill="#4a5568" font-size="7.5">Constraints (6NN + 1 non-NN)</text><circle cx="334" cy="400" r="5" fill="none" stroke="#E53935" stroke-opacity=".25" stroke-width=".8" stroke-dasharray="4,3"/><text x="344" y="404" fill="#4a5568" font-size="7.5">Rb=9.0um</text><line x1="414" y1="400" x2="428" y2="400" stroke="#E53935" stroke-width="1.2" stroke-dasharray="3,2" opacity=".4"/><text x="433" y="404" fill="#4a5568" font-size="7">dashed=non-NN (a2-a4,|dP|=0.21)</text>
+<text x="244.3" y="357" text-anchor="middle" fill="#9b2c2c" font-size="6" font-weight="700">V/O=12573</text><text x="307.3" y="365" text-anchor="middle" fill="#2b6cb0" font-size="6">V/O=1.15</text><text x="430.1" y="365" text-anchor="middle" fill="#276749" font-size="6">V/O=0.18</text><text x="792.4" y="365" text-anchor="middle" fill="#276749" font-size="6">V/O=0.05</text></svg>
+<div class="caption">图 1：金融订单簿价格档位（上）到 Rydberg 原子阵列一维链（下）的物理编码映射。非均匀价格间距通过 $x = (P - P_{\mathrm{min}}) \times 30$ µm/price 线性映射，阻塞半径 $R_b = 9.0$ µm（红色虚线圆）自然区分硬阻塞区和自由区。</div>
+</div>
+
+</div>
+</div>
+
+<!-- ───────────────────────────────────────────────────────────
+     03 — 非均匀订单簿与异构相互作用图
+     ─────────────────────────────────────────────────────────── -->
+<div class="section" id="s3">
+<div class="section-page">03 / 08</div>
+<div class="section-header">
+  <span class="section-num">03</span>
+  <h2>非均匀订单簿与异构相互作用图</h2>
+</div>
+<div class="section-body">
+
+<p>实际订单簿的价格分布是<strong>非均匀</strong>的——某些区域报价密集（流动性聚集），某些区域稀疏。本模拟刻意构建了一个包含极端异质性的订单簿，以充分展示 Rydberg 物理的核心优势。</p>
+
+<h4>相邻原子对的相互作用强度</h4>
+
+<table class="table-wrap">
+<thead><tr>
+  <th>原子对</th><th>价格差</th><th>物理间距 (µm)</th><th>$V_{ij}$ (rad/µs)</th><th>$V/\Omega_{\mathrm{max}}$</th><th>阻塞区制</th>
+</tr></thead>
+<tbody>
+<tr><td>atom0–atom1</td><td class="num">0.12</td><td class="num">3.6</td><td class="num">2,490</td><td class="num">495.4</td><td><span class="tag-hard">HARD BLOCK</span></td></tr>
+<tr><td>atom1–atom2</td><td class="num">0.29</td><td class="num">8.7</td><td class="num">12.5</td><td class="num">2.49</td><td><span class="tag-strong">strong</span></td></tr>
+<tr><td>atom2–atom3</td><td class="num">0.14</td><td class="num">4.2</td><td class="num">988</td><td class="num">196.5</td><td><span class="tag-hard">HARD BLOCK</span></td></tr>
+<tr style="background:#fff5f5;"><td>atom3–atom4</td><td class="num"><strong>0.07</strong></td><td class="num"><strong>2.1</strong></td><td class="num"><strong>63,200</strong></td><td class="num"><strong>12,573</strong></td><td><span class="tag-hard">HARD BLOCK</span></td></tr>
+<tr><td>atom4–atom5</td><td class="num">0.33</td><td class="num">9.9</td><td class="num">5.8</td><td class="num">1.15</td><td><span class="tag-mod">moderate</span></td></tr>
+<tr><td>atom5–atom6</td><td class="num">0.45</td><td class="num">13.5</td><td class="num">0.9</td><td class="num">0.18</td><td><span class="tag-weak">weak</span></td></tr>
+<tr><td>atom6–atom7</td><td class="num">0.12</td><td class="num">3.6</td><td class="num">2,490</td><td class="num">495.4</td><td><span class="tag-hard">HARD BLOCK</span></td></tr>
+<tr><td>atom7–atom8</td><td class="num">0.38</td><td class="num">11.4</td><td class="num">2.5</td><td class="num">0.49</td><td><span class="tag-weak">weak</span></td></tr>
+<tr><td>atom8–atom9</td><td class="num">0.15</td><td class="num">4.5</td><td class="num">653</td><td class="num">129.9</td><td><span class="tag-hard">HARD BLOCK</span></td></tr>
+<tr><td>atom9–atom10</td><td class="num">0.55</td><td class="num">16.5</td><td class="num">0.3</td><td class="num">0.05</td><td><span class="tag-free">free</span></td></tr>
+</tbody>
+</table>
+
+<div class="callout warning">
+<strong>异质性的意义</strong>
+$V/\Omega_{\mathrm{max}}$ 跨越 <strong>五个数量级</strong>：从最紧密对的 12,573（绝对阻塞）到最宽松对的 0.05（完全自由）。这种极端异质性正是模拟量子计算的优势所在——物理相互作用自动对"必须分离"和"可以共存"的档位对进行差异化处理，<strong>无需手工编码约束</strong>。
+</div>
+
+<h4>经典约束图分析</h4>
+<div class="kpi-grid">
+  <div class="kpi-card"><div class="num b">7</div><div class="label">约束边 (|ΔP| &lt; 0.30)</div></div>
+  <div class="kpi-card"><div class="num">N−1=10</div><div class="label">最近邻对总数</div></div>
+  <div class="kpi-card"><div class="num">2048</div><div class="label">完整 Hilbert 空间 (2¹¹)</div></div>
+  <div class="kpi-card"><div class="num b">396</div><div class="label">Blockade 子空间 (↓81%)</div></div>
+</div>
+
+<p>值得注意的是，约束边中存在一条<strong>非最近邻边 (a2–a4, |ΔP|=0.21)</strong>，这是由于非均匀价格间距导致的一维链特例。非均匀权重打破了平移对称性，使解空间远离平凡的 "r-g-r-g" 交替模式，赋予了问题非平凡的优化难度。</p>
+
+</div>
+</div>
+
+<!-- ───────────────────────────────────────────────────────────
+     04 — 脉冲优化的本质
+     ─────────────────────────────────────────────────────────── -->
+<div class="section" id="s4">
+<div class="section-page">04 / 08</div>
+<div class="section-header">
+  <span class="section-num">04</span>
+  <h2>脉冲优化的本质：让量子采样器偏向高收益解</h2>
+</div>
+<div class="section-body">
+
+<p>模拟量子演化由两个时变波形控制：<strong>Rabi 频率 $\Omega(t)$</strong>（驱动原子在基态和 Rydberg 态之间相干演化）和<strong>局部失谐 $\Delta_i(t)$</strong>（通过能级偏置编码权重信息）。波形的形状决定了量子系统最终以怎样的概率分布输出不同的 bitstring。</p>
+
+<div class="callout warning">
+<strong>关键洞察：脉冲参数决定概率分布形态</strong>
+同样的量子设备，同样的采样次数，脉冲参数不同导致输出质量差异一个数量级。脉冲优化的目标不是从采样结果中"挑"出好解，而是让量子演化本身将输出分布<strong>向高收益区域集中</strong>——把设备变成一个对好解天然偏置的采样器。
+</div>
+
+<h4>6 参数物理 ansatz</h4>
+<p>将 $\Omega(t)$ 和 $\Delta_i(t)$ 的波形参数化为 6 个可调变量，保持分段线性结构但允许幅度和时间分配自由变化：</p>
+
+<div class="fbox">
+$\mathbf{x} = [f_\omega,\; f_\delta,\; f_\alpha,\; T_{\mathrm{neg}}/T,\; T_{\mathrm{cross}}/T,\; T_{\mathrm{hold}}/T]$
+</div>
+
+<table class="table-wrap">
+<thead><tr><th>参数</th><th>物理含义</th><th>范围</th><th>PWL 值</th><th>优化后</th><th>变化</th></tr></thead>
+<tbody>
+<tr><td>$f_\omega$</td><td>$\Omega_{\mathrm{max}}$ 缩放</td><td class="num">[0.3, 1.5]</td><td class="num">1.000</td><td class="num opt-cell">0.972</td><td class="num" style="color:#718096;">−2.8%</td></tr>
+<tr class="row-hl"><td>$f_\alpha$</td><td>权重-失谐耦合强度</td><td class="num">[0.3, 3.0]</td><td class="num">1.000</td><td class="num opt-cell"><strong>3.000</strong></td><td class="num tag-red"><strong>+200%</strong></td></tr>
+<tr><td>$f_\delta$</td><td>$\Delta_{\mathrm{amp}}$ 缩放</td><td class="num">[0.3, 1.5]</td><td class="num">1.000</td><td class="num opt-cell">1.300</td><td class="num">+30.0%</td></tr>
+<tr><td>$T_{\mathrm{neg}}/T$</td><td>负失谐初始化占比</td><td class="num">[0.2, 0.6]</td><td class="num">0.400</td><td class="num opt-cell">0.320</td><td class="num">−20.0%</td></tr>
+<tr><td>$T_{\mathrm{cross}}/T$</td><td>过零斜坡占比</td><td class="num">[0.1, 0.4]</td><td class="num">0.250</td><td class="num opt-cell">0.300</td><td class="num">+20.0%</td></tr>
+<tr><td>$T_{\mathrm{hold}}/T$</td><td>正失谐保持占比</td><td class="num">[0.1, 0.4]</td><td class="num">0.250</td><td class="num opt-cell">0.268</td><td class="num">+7.2%</td></tr>
+</tbody>
+</table>
+
+<h4>退火时间线</h4>
+<div class="opt-timeline">
+  <div class="seg" style="flex:3.2; background:#2b6cb0;">负失谐 (3.2 µs)<br>初始化基态</div>
+  <div class="seg" style="flex:3.0; background:#6b46c1;">过零 (3.0 µs)<br>权重激活</div>
+  <div class="seg" style="flex:2.68; background:#276749;">正失谐保持 (2.68 µs)<br>选择高权重</div>
+  <div class="seg" style="flex:1.12; background:#718096;">下降<br>(1.12 µs)</div>
+</div>
+
+<div class="callout purple">
+<strong>优化器发现的关键物理规律</strong>
+$f_\alpha$ 增至满格 3.0（triple hand-picked value），这是最强的驱动力：权重-失谐耦合强度需要达到手选值的 3 倍，才能在高维子空间中有效偏向高 PnL 解。$f_\delta$ 从 1.0 增至 1.3，增强了全局失谐斜坡的幅度——更陡的能量斜坡加速了态选择的"决策"过程。
+</div>
+
+</div>
+</div>
+
+<!-- ───────────────────────────────────────────────────────────
+     03 — 优化方法论
+     ─────────────────────────────────────────────────────────── -->
+<div class="section" id="s5">
+<div class="section-page">05 / 08</div>
+<div class="section-header">
+  <span class="section-num">05</span>
+  <h2>优化方法论：直接最大化期望 PnL</h2>
+</div>
+<div class="section-body">
+
+<h4>为什么用 E[PnL] 而非保真度？</h4>
+
+<div class="col2">
+<div>
+<div class="callout warning">
+<strong>保真度目标（上一阶段）</strong>
+$F = |\langle \psi_{\mathrm{target}} | \psi(T) \rangle|^2$<br>
+→ 需要预先知道最优解<br>
+→ N=11 可行，N=50 不可行<br>
+→ 引导系统到已知正确答案
+</div>
+</div>
+<div>
+<div class="callout success">
+<strong>E[PnL] 目标（本阶段）</strong>
+$E[\mathrm{PnL}] = \frac{1}{N_{\mathrm{shots}}}\sum_k \mathrm{PnL}(\mathrm{bitstring}_k)$<br>
+→ 不需要知道最优解<br>
+→ 直接优化关心的金融指标<br>
+→ "量子有用"的真正场景
+</div>
+</div>
+</div>
+
+<h4>优化管线</h4>
+<div class="pipeline">
+  <div class="pipe-node hl">粗粒度扫描<br>36 点 × 200 shots</div>
+  <span class="pipe-arrow">→</span>
+  <div class="pipe-node hl">Nelder-Mead<br>183 次 × 500 shots</div>
+  <span class="pipe-arrow">→</span>
+  <div class="pipe-node">评估缓存<br>避免重复采样</div>
+  <span class="pipe-arrow">→</span>
+  <div class="pipe-node hl">最终验证<br>2000 shots</div>
+</div>
+
+<h4>噪声对策</h4>
+<p>E[PnL] 目标的关键挑战是 <strong>Monte Carlo 噪声</strong>（标准误差 $\approx \sigma_{\mathrm{PnL}} / \sqrt{N_{\mathrm{shots}}}$）。采用四重对策：</p>
+
+<div class="kpi-grid">
+  <div class="kpi-card"><div class="num b">500</div><div class="label">优化阶段 shots（降噪）</div></div>
+  <div class="kpi-card"><div class="num">0.005</div><div class="label">fatol（匹配噪声底）</div></div>
+  <div class="kpi-card"><div class="num">500</div><div class="label">maxfev（容忍慢收敛）</div></div>
+  <div class="kpi-card"><div class="num b">20%</div><div class="label">初始单纯形扰动（大探索步）</div></div>
+  <div class="kpi-card"><div class="num">eval cache</div><div class="label">浮点哈希避免重复求值</div></div>
+</div>
+
+<div class="callout info">
+<strong>为什么 Nelder-Mead 而非梯度方法？</strong>
+E[PnL] 是通过 Monte Carlo 采样估计的，梯度不可靠（噪声 × 差分 ≈ 灾难）。Nelder-Mead 仅依赖函数值比较，对噪声有一定鲁棒性。代价是收敛慢（219 次求值），但由于每次求值只需 500 shots（而非数千次），总计算量仍可接受（~98k 模拟，40 秒）。
+</div>
+
+</div>
+</div>
+
+<!-- ───────────────────────────────────────────────────────────
+     04 — 核心结果
+     ─────────────────────────────────────────────────────────── -->
+<div class="section" id="s6">
+<div class="section-page">06 / 08</div>
+<div class="section-header">
+  <span class="section-num">06</span>
+  <h2>核心结果：输出分布从"散弹"到"聚焦"</h2>
+</div>
+<div class="section-body">
+
+<h4>最终验证（2000 shots）</h4>
+
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="num" style="font-size:0.82rem;">0.3492 → <span class="g">0.4964</span></div>
+    <div class="label">E[PnL]</div>
+  </div>
+  <div class="kpi-card">
+    <div class="num" style="font-size:0.82rem;">64.7% → <span class="g">91.9%</span></div>
+    <div class="label">E[PnL] / Optimal</div>
+  </div>
+  <div class="kpi-card">
+    <div class="num" style="font-size:0.82rem;">0.15% → <span class="g">45.20%</span></div>
+    <div class="label">P(最优解)</div>
+  </div>
+  <div class="kpi-card">
+    <div class="num" style="font-size:0.82rem;">235 → <span class="b">36</span></div>
+    <div class="label">唯一 bitstring 数（分布集中度）</div>
+  </div>
+  <div class="kpi-card">
+    <div class="num" style="font-size:0.82rem;">0.5400</div>
+    <div class="label">最优解 PnL（保持不变）</div>
+  </div>
+  <div class="kpi-card">
+    <div class="num g">+44.1%</div>
+    <div class="label">E[PnL] 相对 PWL 基线提升</div>
+  </div>
+</div>
+
+<h4>Bitstring 分布对比</h4>
+
+<div class="col2">
+<div>
+<h4 style="margin-top:0;">PWL 基线 — 分布分散（235 种）</h4>
+<table class="table-wrap">
+<thead><tr><th>bitstring</th><th>PnL</th><th class="num">count</th><th class="num">freq</th></tr></thead>
+<tbody>
+<tr><td>10100110011</td><td>0.4300</td><td class="num">117</td><td class="num">5.85%</td></tr>
+<tr><td>01000110011</td><td>0.4200</td><td class="num">93</td><td class="num">4.65%</td></tr>
+<tr><td>10000110011</td><td>0.3500</td><td class="num">91</td><td class="num">4.55%</td></tr>
+<tr><td>10100101011</td><td>0.3900</td><td class="num">76</td><td class="num">3.80%</td></tr>
+<tr><td>10000101011</td><td>0.3100</td><td class="num">59</td><td class="num">2.95%</td></tr>
+<tr><td colspan="4" style="color:#718096; font-size:0.8rem;"><em>… 230 more unique bitstrings …</em></td></tr>
+<tr class="row-hl"><td>01001110011 ★</td><td><strong>0.5400</strong></td><td class="num"><strong>3</strong></td><td class="num"><strong>0.15%</strong></td></tr>
+</tbody>
+</table>
+</div>
+<div>
+<h4 style="margin-top:0;">优化后 — 高度集中（36 种）</h4>
+<table class="table-wrap">
+<thead><tr><th>bitstring</th><th>PnL</th><th class="num">count</th><th class="num">freq</th></tr></thead>
+<tbody>
+<tr class="row-hl"><td>01001110011 ★</td><td><strong>0.5400</strong></td><td class="num"><strong>904</strong></td><td class="num"><strong>45.20%</strong></td></tr>
+<tr><td>01001010011</td><td>0.4800</td><td class="num">614</td><td class="num">30.70%</td></tr>
+<tr><td>10100110011</td><td>0.4300</td><td class="num">181</td><td class="num">9.05%</td></tr>
+<tr><td>01001110010</td><td>0.5100</td><td class="num">48</td><td class="num">2.40%</td></tr>
+<tr><td>01000110011</td><td>0.4200</td><td class="num">47</td><td class="num">2.35%</td></tr>
+<tr><td colspan="4" style="color:#718096; font-size:0.8rem;"><em>… 31 more unique bitstrings …</em></td></tr>
+</tbody>
+</table>
+</div>
+</div>
+
+<div class="callout success">
+<strong>核心现象：分布的戏剧性集中</strong>
+优化后的量子采样器不再均匀探索解空间，而是<strong>高度偏置</strong>地输出两个高收益 bitstring：最优解 `01001110011`（PnL=0.5400, 45.2%）和次优解 `01001010011`（PnL=0.4800, 30.7%）。两者合计占输出的 <strong>75.9%</strong>。相比之下，PWL 基线的输出分布极度分散——235 种不同 bitstring，最优解仅出现 3 次（0.15%），最频繁的配置也不过 5.85%。
+</div>
+
+</div>
+</div>
+
+<!-- ───────────────────────────────────────────────────────────
+     05 — 可视化面板
+     ─────────────────────────────────────────────────────────── -->
+<div class="section" id="s7">
+<div class="section-page">07 / 08</div>
+<div class="section-header">
+  <span class="section-num">07</span>
+  <h2>可视化结果面板</h2>
+</div>
+<div class="section-body">
+
+<div class="img-wrap">
+  <img src="optimal_control_pulse_epnl.png" alt="E[PnL] Optimization Results — 6-Panel Dashboard">
+  <div class="caption">图：六面板总览 — 脉冲波形对比、参数变化、PnL 分布、收敛曲线、激发概率、E[PnL] 对比。</div>
+</div>
+
+<div class="col2">
+<div>
+<h4>(a) 脉冲波形对比</h4>
+<ul style="font-size:0.85rem; padding-left:18px;">
+  <li><strong>虚线</strong> = PWL 基线，<strong>实线</strong> = 优化后</li>
+  <li>优化后的 $\Omega$ 幅度略降（$f_\omega=0.972$）</li>
+  <li>优化后的 $\Delta$ 幅度提升（$f_\delta=1.300$），过零斜坡更陡</li>
+  <li>$\alpha$ 增至 3.0 使权重-失谐分裂大幅增强</li>
+</ul>
+</div>
+<div>
+<h4>(b) 参数前后对比</h4>
+<ul style="font-size:0.85rem; padding-left:18px;">
+  <li><strong>橙色</strong> = PWL，<strong>绿色</strong> = 优化后</li>
+  <li>$f_\alpha$ 变化最大：1.0 → 3.0（触及搜索上界）</li>
+  <li>$T_{\mathrm{neg}}/T$ 从 0.40 降至 0.32</li>
+  <li>其余参数变化相对温和</li>
+</ul>
+</div>
+<div>
+<h4>(c) PnL 分布 — 核心面板</h4>
+<ul style="font-size:0.85rem; padding-left:18px;">
+  <li><strong>橙色</strong> = PWL（散布广泛），<strong>绿色</strong> = 优化后（集中在高 PnL 区）</li>
+  <li>优化后分布显著右移并收窄</li>
+  <li>红色虚线 = 最优 PnL* = 0.540</li>
+  <li>优化后的主峰紧贴最优值，PWL 的主峰远低于它</li>
+</ul>
+</div>
+<div>
+<h4>(d) 收敛曲线</h4>
+<ul style="font-size:0.85rem; padding-left:18px;">
+  <li>蓝点 = 每次求值的 E[PnL] 估计（带 ±1SE 阴影）</li>
+  <li>红线 = 运行最佳值（单调上升）</li>
+  <li>噪声清晰可见，但运行最佳值稳步收敛</li>
+  <li>粗扫（前 36 次）快速定位，Nelder-Mead 精调缓慢但持续</li>
+</ul>
+</div>
+<div>
+<h4>(e) 激发概率</h4>
+<ul style="font-size:0.85rem; padding-left:18px;">
+  <li>★ = 最优解中应选中的原子（atom1,4,5,6,9,10）</li>
+  <li>优化后（绿色）在目标原子上激发概率显著更高</li>
+  <li>在非目标原子上抑制更彻底</li>
+</ul>
+</div>
+<div>
+<h4>(f) E[PnL] 直接对比</h4>
+<ul style="font-size:0.85rem; padding-left:18px;">
+  <li>PWL：0.3492（仅为最优值的 64.7%）</li>
+  <li>优化后：0.4964（达到最优值的 91.9%）</li>
+  <li>误差条 = ±1 SE（2000 shots 下非常窄）</li>
+  <li>红色参考线 = 最优值 0.5400</li>
+</ul>
+</div>
+</div>
+
+</div>
+</div>
+
+
+<!-- ───────────────────────────────────────────────────────────
+     06 — 未来应用方向与讨论
+     ─────────────────────────────────────────────────────────── -->
+<div class="section" id="s8">
+<div class="section-page">08 / 08</div>
+<div class="section-header">
+  <span class="section-num">08</span>
+  <h2>未来应用方向与讨论</h2>
+</div>
+<div class="section-body">
+
+<h4>本方法的可扩展性论证</h4>
+
+<div class="callout purple">
+<strong>脉冲优化的开销不随 N 指数增长</strong>
+6 个脉冲参数控制 N 个原子的演化。无论 N=11 还是 N=50，优化器始终只在 6 维空间中搜索。<strong>优化成本恒定</strong>——变化的只是每次求值中 Bloqade 模拟的 Hilbert 空间维度（从 $2^{11}$ 到 $2^{50}$），而模拟代价随 blockade 子空间大小增长（远小于全空间）。当前硬件已支持 256+ 原子，足以编码 50-100 个报价档位。
+</div>
+
+<h4>四个应用方向</h4>
+
+<div class="col2">
+<div>
+<div class="callout success">
+<strong>1. 实时做市商报价选择</strong>
+订单簿实时更新 → 重新求解 MWIS → 调整报价组合。量子采样器输出分布偏置天然适合高频场景：不需要每次都找到最优解，只需要<strong>平均收益足够高</strong>——这正是 E[PnL] 目标优化的结果。
+</div>
+</div>
+<div>
+<div class="callout info">
+<strong>2. 扩展到投资组合优化</strong>
+MWIS 框架可扩展到更一般的组合选择问题：资产 = 顶点，相关性约束 = 边，预期收益 = 权重。Rydberg 阵列天然处理"不能同时持有"的排斥约束，与 MWIS 结构匹配。
+</div>
+</div>
+<div>
+<div class="callout warning">
+<strong>3. 混合量子-经典流水线</strong>
+量子采样器提供高概率候选解 → 经典后处理验证和微调。量子负责在高维空间中"猜测"有希望的区域，经典负责精确评估和约束检查。
+</div>
+</div>
+<div>
+<div class="callout purple">
+<strong>4. 实际量子硬件部署</strong>
+当前使用 Bloqade 模拟器验证。QuEra Aquila（256 原子）和 Pasqal Fresnel 等真实硬件已具备运行此类 MWIS 程序的能力。模拟→硬件的迁移主要挑战在于退相干、激光噪声和读出误差——但这些被脉冲优化的鲁棒性（E[PnL] 而非精确态制备）部分缓解。
+</div>
+</div>
+</div>
+
+<h4>当前局限性</h4>
+<ul style="padding-left:20px; font-size:0.9rem;">
+  <li><strong>N=11 为概念验证</strong>：$2^{11}=2048$ 经典穷举仍平凡。N≥50 时量子优势才开始显现。</li>
+  <li><strong>E[PnL] 目标的噪声</strong>：需要更多 shots 和求值次数才能收敛到与保真度目标相当的质量。可探索贝叶斯优化或 CMA-ES 作为替代。</li>
+  <li><strong>$f_\alpha$ 触及搜索上界</strong>：最优值 3.0 恰好等于搜索范围上限，暗示可能存在更好的参数在 [3.0, 5.0] 区间内。</li>
+  <li><strong>模拟→硬件的 fidelity gap</strong>：Bloqade 模拟假设完美相干演化。实际硬件的退相干和噪声会降低输出质量，但 E[PnL] 作为平均指标比单次采样成功率更鲁棒。</li>
+</ul>
+
+<div class="takeaway" style="margin-top:24px;">
+<strong>总结</strong><br><br>
+本工作展示了一个完整的"以金融指标为优化目标"的量子脉冲控制管线：<br><br>
+<strong>问题：</strong>做市商在多档位订单簿中选择报价组合，满足最小间距约束下最大化期望收益（MWIS）。<br>
+<strong>方案：</strong>将价格档位编码为 Rydberg 原子一维链，6 参数物理 ansatz 控制量子退火波形，Nelder-Mead 直接最大化 E[PnL]（Monte Carlo 采样驱动）。<br>
+<strong>结果：</strong>优化后 E[PnL] 从 0.3492 提升至 <strong>0.4964</strong>（+44.1%），达到最优值的 <strong>91.9%</strong>，P(最优解) 从 0.15% 跃升至 <strong>45.20%</strong>。输出分布从 235 种 bitstring 收窄至 36 种，量子采样器被成功塑造为<strong>高收益解的天然偏置发生器</strong>。<br>
+<strong>关键意义：</strong>这是从"验证已知最优解"到"在未知解空间中优化期望收益"的跃迁——<strong>真正向量子有用迈出的一步</strong>。6 个脉冲参数控制 N 个原子，优化开销不随 N 指数增长。当 N 扩大到经典穷举不可行的区间（50-100），这套方法的价值将真正释放。
+</div>
+
+</div>
+</div>
+
+</div><!-- /container -->
+
+<div class="footer">
+<p>报告生成日期：2026-07-25 &nbsp;|&nbsp; Bloqade 0.34.0, Python 3.x &nbsp;|&nbsp; 模拟环境：Windows 11 &nbsp;|&nbsp; 文档格式：商务技术报告</p>
+<p style="margin-top:6px;">Shot budget: scan=200 | opt=500 | final=2000 &middot; Nelder-Mead: maxfev=500, fatol=0.005 &middot; 最优 bitstring = (0,1,0,0,1,1,1,0,0,1,1)</p>
+</div>
+
+</body>
+</html>
