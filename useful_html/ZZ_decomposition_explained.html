@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QAOA Cost Hamiltonian 中 ZZ(γ) 门的分解</title>
+<script>
+window.MathJax = {
+  tex: {
+    inlineMath: [['$','$'], ['\\(','\\)']],
+    displayMath: [['$$','$$'], ['\\[','\\]']],
+    macros: {
+      ZZ: '{\\mathrm{ZZ}}',
+      Rz: '{\\mathrm{Rz}}',
+      Hc: '{\\mathcal{H}_C}',
+      bra: ['\\langle #1 |\\,', 1],
+      ket: ['|\\, #1 \\rangle', 1],
+      braket: ['\\langle #1 | #2 \\rangle', 2],
+      id: '{\\mathbb{I}}'
+    }
+  },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+<style>
+  :root {
+    --bg: #fdfbf7;
+    --card-bg: #ffffff;
+    --text: #3b2f2f;
+    --text-light: #6b5b5b;
+    --accent: #8b4513;
+    --accent-light: #c47f3a;
+    --blue: #1a5276;
+    --blue-light: #2980b9;
+    --green: #1e8449;
+    --red: #922b21;
+    --warm-yellow: #f9eec1;
+    --warm-yellow-border: #d4a017;
+    --soft-blue: #eaf2f8;
+    --soft-blue-border: #5b9bd5;
+    --soft-teal: #e8f8f5;
+    --soft-teal-border: #1abc9c;
+    --shadow: 0 2px 12px rgba(0,0,0,0.06);
+    --radius: 10px;
+  }
+
+  * { box-sizing: border-box; margin:0; padding:0; }
+
+  body {
+    font-family: "Palatino Linotype", "Book Antiqua", Palatino, Georgia, "Times New Roman", serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.78;
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 2.5rem 1.5rem 5rem;
+    font-size: 1.06rem;
+  }
+
+  /* ===== Cover ===== */
+  .cover {
+    text-align: center;
+    padding: 4rem 0 3rem;
+    border-bottom: 2px solid var(--accent);
+    margin-bottom: 2.5rem;
+  }
+  .cover h1 { font-size: 2rem; color: var(--accent); margin-bottom: 0.5rem; letter-spacing: 0.02em; }
+  .cover .subtitle { font-size: 1.15rem; color: var(--text-light); margin-bottom: 1.5rem; }
+  .cover .ref { font-size: 0.9rem; color: var(--text-light); }
+  .cover .ref span { color: var(--blue); }
+
+  /* ===== TOC ===== */
+  .toc {
+    background: var(--card-bg);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 1.8rem 2rem;
+    margin-bottom: 2.5rem;
+  }
+  .toc h2 { font-size: 1.2rem; color: var(--accent); margin-bottom: 0.8rem; }
+  .toc ol { padding-left: 1.6rem; }
+  .toc li { margin-bottom: 0.3rem; color: var(--blue); }
+  .toc li a { color: var(--blue); text-decoration: none; }
+  .toc li a:hover { text-decoration: underline; }
+
+  /* ===== Section ===== */
+  section {
+    background: var(--card-bg);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 2rem 2.2rem;
+    margin-bottom: 2rem;
+  }
+  section h2 {
+    font-size: 1.35rem;
+    color: var(--accent);
+    margin-bottom: 1.2rem;
+    display: flex; align-items: center; gap: 0.6rem;
+  }
+  .section-num {
+    display: inline-flex;
+    align-items: center; justify-content: center;
+    width: 2rem; height: 2rem;
+    background: var(--accent); color: #fff;
+    border-radius: 50%;
+    font-size: 0.95rem; font-weight: bold;
+    flex-shrink: 0;
+  }
+
+  /* ===== Formula boxes ===== */
+  .formula-box {
+    padding: 1.2rem 1.5rem;
+    border-radius: 8px;
+    margin: 1.2rem 0;
+    text-align: center;
+    font-size: 1.1rem;
+  }
+  .formula-blue  { background: var(--soft-blue); border-left: 4px solid var(--soft-blue-border); }
+  .formula-teal { background: var(--soft-teal); border-left: 4px solid var(--soft-teal-border); }
+  .formula-yellow { background: var(--warm-yellow); border-left: 4px solid var(--warm-yellow-border); }
+  .formula-red   { background: #fdedec; border-left: 4px solid #e74c3c; }
+
+  .formula-label {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: bold;
+    margin-bottom: 0.5rem;
+  }
+  .f-blue  .formula-label { color: var(--blue-light); }
+  .f-teal  .formula-label { color: #16a085; }
+  .f-yellow .formula-label { color: #b8860b; }
+  .f-red   .formula-label { color: #c0392b; }
+
+  /* ===== Callout ===== */
+  .callout {
+    padding: 1rem 1.4rem;
+    border-radius: 8px;
+    margin: 1.2rem 0;
+    font-size: 0.98rem;
+  }
+  .callout-info { background: #eaf6fd; border-left: 4px solid #2980b9; }
+  .callout-warn { background: #fef9e7; border-left: 4px solid #f39c12; }
+  .callout-tip  { background: #eafaf1; border-left: 4px solid #27ae60; }
+
+  /* ===== Circuit diagram ===== */
+  .circuit {
+    background: #fafaf7;
+    border: 1px solid #e0dcd0;
+    border-radius: 8px;
+    padding: 1.5rem 1.2rem 0.8rem;
+    margin: 1.2rem 0;
+    font-family: "Courier New", Courier, "Source Code Pro", monospace;
+    font-size: 0.92rem;
+    line-height: 2.0;
+    overflow-x: auto;
+    white-space: pre;
+  }
+  .circuit .wire { color: #555; }
+  .circuit .gate { color: var(--blue); font-weight: bold; }
+  .circuit .ctrl { color: var(--accent); }
+  .circuit .col   { color: var(--green); }
+  .circuit .label { color: #999; font-size: 0.82rem; }
+  .circuit .comment { color: #999; font-style: italic; font-family: "Palatino Linotype", Georgia, serif; }
+  .circuit-caption {
+    text-align: center;
+    font-size: 0.9rem;
+    color: var(--text-light);
+    margin-top: 0.3rem;
+    font-style: italic;
+  }
+
+  /* ===== Step ===== */
+  .step-box {
+    background: var(--card-bg);
+    border: 1px solid #e8e4d8;
+    border-radius: 8px;
+    padding: 1.2rem 1.5rem;
+    margin: 1rem 0;
+  }
+  .step-label {
+    display: inline-block;
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.78rem;
+    font-weight: bold;
+    padding: 0.15rem 0.7rem;
+    border-radius: 20px;
+    margin-bottom: 0.6rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .step-box p { margin-top: 0.4rem; }
+
+  /* ===== Chain ===== */
+  .chain {
+    display: flex; align-items: center; justify-content: center;
+    flex-wrap: wrap; gap: 0.6rem;
+    margin: 1.2rem 0;
+    font-size: 1rem;
+  }
+  .chain .box {
+    background: var(--card-bg);
+    border: 2px solid var(--blue);
+    border-radius: 8px;
+    padding: 0.4rem 0.9rem;
+    font-weight: bold;
+    color: var(--blue);
+  }
+  .chain .arrow { font-size: 1.3rem; color: var(--accent); }
+  .chain .box-native {
+    border-color: #27ae60; color: #27ae60;
+  }
+  .chain .box-final {
+    border-color: var(--accent); color: var(--accent);
+  }
+
+  /* ===== Table ===== */
+  table {
+    width: 100%; border-collapse: collapse; margin: 1.2rem 0; font-size: 0.94rem;
+  }
+  th {
+    background: var(--accent); color: #fff;
+    padding: 0.55rem 0.8rem; text-align: left; font-weight: 600;
+  }
+  td {
+    padding: 0.55rem 0.8rem;
+    border-bottom: 1px solid #e8e4d8;
+  }
+  tr:nth-child(even) td { background: #fcfaf5; }
+  tr:last-child td { border-bottom: none; }
+
+  /* ===== Legend ===== */
+  .legend {
+    display: flex; gap: 2rem; flex-wrap: wrap; justify-content: center;
+    font-size: 0.9rem; margin: 0.8rem 0;
+  }
+  .legend span { display: flex; align-items: center; gap: 0.35rem; }
+
+  /* ===== Footer ===== */
+  footer {
+    text-align: center; color: var(--text-light); font-size: 0.85rem;
+    margin-top: 3rem; padding-top: 1.8rem;
+    border-top: 1px solid #ddd8c8;
+  }
+
+  /* ===== Responsive ===== */
+  @media (max-width: 640px) {
+    body { padding: 1rem 0.8rem 3rem; font-size: 0.98rem; }
+    section { padding: 1.3rem 1rem; }
+    .chain { font-size: 0.88rem; gap: 0.3rem; }
+    .circuit { font-size: 0.75rem; padding: 0.8rem 0.6rem 0.5rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ==================== COVER ==================== -->
+<div class="cover">
+  <h1>QAOA Cost Hamiltonian 中<br>ZZ($\gamma$) 门的分解</h1>
+  <p class="subtitle">从算符恒等式到中性原子硬件原生门</p>
+  <p class="ref">
+    关联代码：<span>Bloqade SIMD 并行编译</span> &nbsp;·&nbsp;
+    目标硬件：<span>中性原子（CZ + 全局 Rz 原生）</span> &nbsp;·&nbsp;
+    <span>2026-07-23</span>
+  </p>
+</div>
+
+<!-- ==================== TOC ==================== -->
+<div class="toc">
+  <h2>目录</h2>
+  <ol>
+    <li><a href="#s1">我们要实现什么：ZZ($\gamma$) 门</a></li>
+    <li><a href="#s2">第一步：ZZ 通过 CNOT + Rz + CNOT（三明治恒等式）</a></li>
+    <li><a href="#s3">第二步：CNOT 通过 H + CZ + H（硬件原生分解）</a></li>
+    <li><a href="#s4">完整展开：ZZ($\gamma$) 分解的全貌</a></li>
+    <li><a href="#s5">Bloqade 代码中如何对应</a></li>
+    <li><a href="#s6">为什么非这样做不可</a></li>
+  </ol>
+</div>
+
+<!-- ==================== S1: Target ==================== -->
+<section id="s1">
+  <h2><span class="section-num">1</span>我们要实现什么：ZZ($\gamma$) 门</h2>
+
+  <p>
+    QAOA 的 Cost Hamiltonian（MaxCut 问题）是图上所有边的 Z⊗Z 项之和：
+  </p>
+
+  <div class="formula-box formula-blue f-blue">
+    <div class="formula-label">Cost Hamiltonian</div>
+    $$H_C = \sum_{(i,j) \in E} Z_i Z_j \qquad\text{(每条边贡献一个 ZZ)}$$
+  </div>
+
+  <p>
+    其时间演化为：
+  </p>
+
+  <div class="formula-box formula-teal f-teal">
+    <div class="formula-label">Cost Unitary（目标）</div>
+    $$U_C(\gamma) = e^{-i\gamma H_C} = \prod_{(i,j)\in E} \underbrace{e^{-i\gamma\, Z_i Z_j / 2}}_{\text{ZZ}(\gamma)\;\text{门}}$$
+  </div>
+
+  <div class="callout callout-info">
+    <strong>核心任务：</strong>用硬件原生门（CZ 和单 qubit 旋转）实现两 qubit 门 <strong>ZZ($\gamma$) = $e^{-i\gamma\, Z\otimes Z/2}$</strong>。
+  </div>
+
+  <p>用 Bloch 球的语言说：ZZ($\gamma$) 是两个 qubit 之间的<strong>条件相位旋转</strong>——当两个 qubit 的 Z 分量同号时积累 $-\gamma/2$ 相位，异号时积累 $+\gamma/2$ 相位。</p>
+</section>
+
+<!-- ==================== S2: Step 1 ==================== -->
+<section id="s2">
+  <h2><span class="section-num">2</span>第一步：ZZ 通过 CNOT + Rz + CNOT</h2>
+
+  <p>
+    最著名也最核心的恒等式——<strong>CNOT 三明治</strong>：在 target qubit 上施加 $R_z(\gamma)$，两侧各用一个 CNOT 包裹。
+  </p>
+
+  <div class="circuit">
+<span class="comment">ZZ(γ) = CNOT · (I⊗Rz(γ)) · CNOT</span>
+
+<span class="wire">ctrl: ──</span><span class="ctrl">●</span><span class="wire">──────────────</span><span class="ctrl">●</span><span class="wire">──</span>
+<span class="wire">      │              │</span>
+<span class="wire">targ: ──</span><span class="col">⊕</span><span class="wire">──</span><span class="gate">Rz(γ)</span><span class="wire">──</span><span class="col">⊕</span><span class="wire">──</span>
+  </div>
+  <div class="circuit-caption">电路图 1：ZZ(γ) 的 CNOT 三明治分解</div>
+
+  <p><strong>为什么这个恒等式成立？</strong>在计算基下，CNOT 的行为是 $|x,y\rangle \mapsto |x, x\oplus y\rangle$。来看它对算符的共轭作用：</p>
+
+  <div class="step-box">
+    <span class="step-label">推导</span>
+    <p>
+      记 ctrl = qubit 1，targ = qubit 2。CNOT = $|0\rangle\langle 0| \otimes I + |1\rangle\langle 1| \otimes X$。
+    </p>
+    <p>
+      设 target 上的 $R_z(\gamma) = e^{-i\gamma Z_2/2} = \cos(\gamma/2)\, I - i\sin(\gamma/2)\, Z_2$。
+    </p>
+    <p>
+      CNOT 把 $Z_2$ 共轭为 $Z_1Z_2$（这是 CNOT 的经典性质：它将 target 上的 Z 错误<em>传播</em>到 ctrl 上）：
+    </p>
+  </div>
+
+  <div class="formula-box formula-yellow f-yellow">
+    <div class="formula-label">核心恒等式</div>
+    $$\text{CNOT} \cdot (I \otimes Z) \cdot \text{CNOT} = Z \otimes Z$$
+  </div>
+
+  <p>由此立刻得到指数形式：</p>
+
+  <div class="formula-box formula-teal f-teal">
+    $$\text{CNOT} \cdot (I \otimes R_z(\gamma)) \cdot \text{CNOT} = \text{CNOT} \cdot e^{-i\gamma\, I\otimes Z/2} \cdot \text{CNOT}$$
+    $$= \exp\!\big(-i\gamma\, \text{CNOT} \cdot (I\otimes Z) \cdot \text{CNOT} / 2\big)$$
+    $$= e^{-i\gamma\, Z\otimes Z/2} = \text{ZZ}(\gamma)$$
+  </div>
+
+  <div class="callout callout-tip">
+    <strong>物理直觉：</strong>CNOT 把 target qubit 的相位信息拷贝到 ctrl qubit 上——于是原本只作用在一个 qubit 上的 $R_z$ 变成了两个 qubit 联合的条件相位。
+  </div>
+
+  <p><strong>重要：所有 ZZ 门互相可交换。</strong>因为 $Z_iZ_j$ 都是对角矩阵，不同边上的 ZZ 项对易。因此：</p>
+
+  <div class="formula-box formula-blue f-blue">
+    $$\prod_{(i,j)\in E} e^{-i\gamma\, Z_i Z_j/2} $$
+    对每条边独立分解，不需要在意顺序——这是并行化的数学基础。
+  </div>
+</section>
+
+<!-- ==================== S3: Step 2 ==================== -->
+<section id="s3">
+  <h2><span class="section-num">3</span>第二步：CNOT 通过 H + CZ + H</h2>
+
+  <p>
+    上面一步把 ZZ 分解成了 CNOT + Rz。但中性原子硬件<strong>没有 CNOT</strong>——它只有 CZ。<br>
+    好消息是，CNOT = H(target) · CZ · H(target)，这个恒等式是量子计算教科书的第一页。
+  </p>
+
+  <div class="circuit">
+<span class="comment">CNOT = (I⊗H) · CZ · (I⊗H)</span>
+
+<span class="wire">ctrl: ──</span><span class="ctrl">●</span><span class="wire">──────────</span><span class="ctrl">●</span><span class="wire">──</span>
+<span class="wire">      │            │</span>
+<span class="wire">targ: ──</span><span class="gate">H</span><span class="wire">──</span><span class="col">◯</span><span class="wire">──</span><span class="gate">H</span><span class="wire">──</span>
+  </div>
+  <div class="circuit-caption">电路图 2：CNOT 分解为 CZ + H（◯ = CZ）</div>
+
+  <div class="formula-box formula-yellow f-yellow">
+    <div class="formula-label">CNOT vs CZ 的关系</div>
+    $$X = HZH \quad\Longrightarrow\quad \text{CNOT} = (I\otimes H) \cdot \text{CZ} \cdot (I\otimes H)$$
+  </div>
+
+  <p><strong>直观看：</strong>CZ 在目标 qubit 是 |1⟩ 时给条件相位 −1。CNOT 在控制 qubit 是 |1⟩ 时翻转目标。$X = HZH$（H 把 Z 特征基旋转到 X 特征基），把这个代进去：CZ 的控制端不变，target 端的 Z 变成 X → 条件翻转 = CNOT。</p>
+
+  <hr style="border: none; border-top: 1px solid #e0dcd0; margin: 1.5rem 0;">
+
+  <p>
+    从 QAOA 电路的角度，CZ <strong>已经是硬件原生门</strong>，H 可以通过 $U(\pi/2, 0, \pi)$ 实现（也即单 qubit 旋转，同样是原生的）。这意味着：<strong>两步分解后，ZZ(γ) 中不再包含任何非原生门。</strong>
+  </p>
+</section>
+
+<!-- ==================== S4: Full chain ==================== -->
+<section id="s4">
+  <h2><span class="section-num">4</span>完整展开：ZZ($\gamma$) 分解的全貌</h2>
+
+  <p>把两步串起来，得到 <strong>ZZ($\gamma$) 的完整五门分解</strong>：</p>
+
+  <div class="chain">
+    <span class="box box-final">ZZ(γ)</span>
+    <span class="arrow">⟶</span>
+    <span class="box">CNOT</span>
+    <span class="arrow">·</span>
+    <span class="box">Rz(γ)</span>
+    <span class="arrow">·</span>
+    <span class="box">CNOT</span>
+  </div>
+
+  <div class="chain">
+    <span class="arrow">↓ 展开每个 CNOT</span>
+  </div>
+
+  <div class="chain">
+    <span class="box box-native">H</span>
+    <span class="arrow">·</span>
+    <span class="box box-native">CZ</span>
+    <span class="arrow">·</span>
+    <span class="box box-native">H</span>
+    <span class="arrow">·</span>
+    <span class="box box-native">Rz(γ)</span>
+    <span class="arrow">·</span>
+    <span class="box box-native">H</span>
+    <span class="arrow">·</span>
+    <span class="box box-native">CZ</span>
+    <span class="arrow">·</span>
+    <span class="box box-native">H</span>
+  </div>
+
+  <div class="circuit-caption">绿色 = 硬件原生门（CZ 和单 qubit 旋转）</div>
+
+  <!-- circuit -->
+  <div class="circuit">
+<span class="comment">ZZ(γ) 完整分解 —— 5 个原生门序列</span>
+
+<span class="label">q0 (ctrl): ──────</span><span class="ctrl">●</span><span class="wire">──────────────────</span><span class="ctrl">●</span><span class="wire">──────</span>
+<span class="label">               │                    │</span>
+<span class="label">q1 (targ): ──</span><span class="gate">H</span><span class="wire">──</span><span class="col">◯</span><span class="wire">──</span><span class="gate">H</span><span class="wire">──</span><span class="gate">Rz(γ)</span><span class="wire">──</span><span class="gate">H</span><span class="wire">──</span><span class="col">◯</span><span class="wire">──</span><span class="gate">H</span><span class="wire">──</span>
+
+<span class="comment">     HH = I 抵消！</span>
+  </div>
+  <div class="circuit-caption">电路图 3：ZZ(γ) 的五门分解（中间 H 不抵消因为它们夹着 Rz）</div>
+
+  <div class="callout callout-warn">
+    <strong>⚠ 注意：</strong>中间的两个 H 看起来相邻，但它们中间夹着 Rz(γ)，所以不能轻易合并成 I。实际上 $HR_z(\gamma)H = R_x(\gamma)$，这里 H-Rz-H 构成的是 X 基下的旋转——这正是 ZZ 门在两个 qubit 之间传递相位的机制。
+  </div>
+
+  <h3 style="font-size:1.1rem; color:var(--accent); margin-top:1.5rem;">Bloqade 中为何合并了 H</h3>
+
+  <p>在实际代码中，中间的 $HR_z(\gamma)H = R_x(\gamma)$ 并不是最优的（因为硬件原生支持任意 U 旋转）。Bloqade 的做法是：保留外侧 H 用于 CZ 的基变换，但 <em>主动避开</em> 中间两次 H 的冗余。观察：</p>
+
+  <div class="circuit">
+<span class="comment">Bloqade 优化版（parallel_cz_phase）</span>
+
+<span class="label">ctrls: ──</span><span class="ctrl">●</span><span class="wire">──────────────────</span><span class="ctrl">●</span><span class="wire">──────</span>
+<span class="label">        │                    │</span>
+<span class="label">qargs: ──</span><span class="gate">H</span><span class="wire">──</span><span class="col">◯</span><span class="wire">──</span><span class="gate">H</span><span class="wire">──</span><span class="gate">Rz(γ)</span><span class="wire">──</span><span class="gate">H</span><span class="wire">──</span><span class="col">◯</span><span class="wire">──</span><span class="gate">H</span><span class="wire">──</span>
+  </div>
+  <div class="circuit-caption">电路图 4：标准五门方案（与 Bloqade 等价）</div>
+
+  <p>而 Bloqade 的 <code>parallel_cz_phase</code> 写了<strong>两步 parallel_cx + 一步 parallel.rz</strong>，意味着它把中间的 $H\cdot R_z(\gamma)\cdot H$ 隐含在 CNOT 分解的自动合并中了——编译器会优化，所以手写代码不需要显式展平到五门。</p>
+</section>
+
+<!-- ==================== S5: Code mapping ==================== -->
+<section id="s5">
+  <h2><span class="section-num">5</span>Bloqade 代码对应关系</h2>
+
+  <p>回到你的 Bloqade SIMD 代码，逐函数映射：</p>
+
+  <table>
+    <thead>
+      <tr><th>代码函数</th><th>数学定义</th><th>对应电路</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>parallel_h(qargs)</code></td>
+        <td>$U(\frac{\pi}{2}, 0, \pi) = H$</td>
+        <td>单 qubit Hadamard（硬件原生）</td>
+      </tr>
+      <tr>
+        <td><code>parallel_cx(ctrls, qargs)</code></td>
+        <td>H(target) · CZ · H(target)</td>
+        <td>CNOT = 第三节图 2 的分解</td>
+      </tr>
+      <tr style="background:#fef9e7;">
+        <td><code>parallel_cz_phase(ctrls, qargs, gamma)</code></td>
+        <td>CNOT · Rz(γ) · CNOT</td>
+        <td><strong>ZZ(γ) = 第二节图 1 的分解</strong></td>
+      </tr>
+      <tr>
+        <td><code>qasm2.parallel.u(all_qubits, theta=beta, ...)</code></td>
+        <td>$U(\beta, 0, 0) = R_y(\beta)$</td>
+        <td>Mixer: 单 qubit 旋转（硬件原生）</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>调用链：</p>
+
+  <div class="chain" style="font-size:0.9rem;">
+    <code style="color:var(--accent);">parallel_cz_phase</code>
+    <span class="arrow">调用</span>
+    <code>parallel_cx</code>
+    <span class="arrow">调用</span>
+    <code>parallel_h</code>
+    <span style="color:var(--green);">+ cz</span>
+    <span class="arrow">调用</span>
+    <code>parallel_h</code>
+    <span>+</span>
+    <code style="color:var(--blue);">rz</code>
+    <span class="arrow">+</span>
+    <code>parallel_cx</code>
+    <span class="arrow">（再展开）...</span>
+  </div>
+
+  <p>这样设计的好处：<strong>调用一次 <code>parallel_cz_phase</code> 就是一次完整的 ZZ(γ)，</strong>而且 SIMD 并行——同一颜色组的所有边一起做。</p>
+</section>
+
+<!-- ==================== S6: Why ==================== -->
+<section id="s6">
+  <h2><span class="section-num">6</span>为什么非这样做不可</h2>
+
+  <p>三层递进逻辑：</p>
+
+  <table>
+    <thead>
+      <tr><th>层级</th><th>问 题</th><th>答 案</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>物理层</strong></td>
+        <td>硬件有什么门？</td>
+        <td>中性原子：CZ（Rydberg 阻塞）+ 任意 U(θ,φ,λ)（激光脉冲）。<br><em>没有</em> CNOT，<em>没有</em> 原生 ZZ。</td>
+      </tr>
+      <tr>
+        <td><strong>数学层</strong></td>
+        <td>算法需要什么门？</td>
+        <td>QAOA 的 cost unitary = 每条边上 $e^{-i\gamma Z_i Z_j/2}$。<br>必须用 ZZ(γ) 两 qubit 门。</td>
+      </tr>
+      <tr>
+        <td><strong>编译层</strong></td>
+        <td>怎么把算法翻译成硬件门？</td>
+        <td>
+          ① ZZ(γ) → CNOT + Rz(γ) + CNOT（本文第 2 节）<br>
+          ② CNOT → H + CZ + H（本文第 3 节）<br>
+          <strong>⇒ ZZ(γ) 最终全由原生门构成</strong>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout callout-tip">
+    <strong>总结：</strong>这不是"多此一举"——这是量子编译的本质工作。算法用高层逻辑门表达（ZZ），编译器把它们翻译成硬件能听懂的原生门序列（CZ + U）。分解越高效，电路越短；电路越短，噪声影响越小。
+  </div>
+
+  <p style="margin-top:1.5rem; text-align:center; color:var(--text-light);">
+    回到代码中，<code>parallel_cz_phase</code> 封装了这全部三步——<br>
+    对上层调用者（kernel 里的 QAOA 循环），它就是一个可以直接用的 <strong>ZZ(γ) 原语</strong>。
+  </p>
+</section>
+
+<!-- ==================== FOOTER ==================== -->
+<footer>
+  <p>ZZ(γ) Gate Decomposition for QAOA Cost Hamiltonian &nbsp;·&nbsp; 2026-07-23</p>
+  <p>参考：Nielsen &amp; Chuang, §4.3 (Controlled Operations) &nbsp;·&nbsp;
+     Farhi, Goldstone &amp; Gutmann, <em>A Quantum Approximate Optimization Algorithm</em> (2014)
+  </p>
+</footer>
+
+</body>
+</html>
